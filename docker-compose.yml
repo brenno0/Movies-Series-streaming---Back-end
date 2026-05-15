@@ -15,14 +15,30 @@ services:
       timeout: 5s
       retries: 5
 
-  nb-flix-backend: 
-    build: 
+  nb-flix-cache:
+    image: 'redis:7-alpine'
+    ports:
+      - 6379:6379
+    networks:
+      - nbflix-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nb-flix-backend:
+    build:
       context: .
     ports:
       - 3333:3333
     container_name: "nb-flix-backend"
-    depends_on: 
+    environment:
+      - REDIS_URL=redis://nb-flix-cache:6379
+    depends_on:
       nb-flix-database:
+        condition: service_healthy
+      nb-flix-cache:
         condition: service_healthy
     entrypoint:
       - /bin/sh

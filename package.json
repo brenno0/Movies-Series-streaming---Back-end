@@ -61,6 +61,7 @@
         "@fastify/multipart": "9.0.3",
         "@fastify/swagger": "9.5.1",
         "@fastify/swagger-ui": "5.2.3",
+        "@prisma/client": "6.10.1",
         "@vitest/ui": "3.2.4",
         "bcrypt": "6.0.0",
         "bcryptjs": "3.0.2",
@@ -69,9 +70,9 @@
         "dotenv": "16.5.0",
         "fastify": "5.4.0",
         "fastify-type-provider-zod": "4.0.0",
+        "ioredis": "5.10.1",
         "pdf-parse": "1.1.1",
         "prisma": "6.10.1",
-        "@prisma/client": "6.10.1",
         "util": "0.12.5",
         "zod": "3.25.67"
     },
