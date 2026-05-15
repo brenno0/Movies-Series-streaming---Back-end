@@ -11,6 +11,8 @@ export const createUser = async (
   reply: FastifyReply,
 ) => {
   try {
+    console.log('CHAMANDO');
+
     const registerBodySchema = z.object({
       name: z.string(),
       email: z.string().email('Please insert an valid e-mail.'),
@@ -25,9 +27,10 @@ export const createUser = async (
       email,
       password,
     });
-
+    console.log('CHAMANDO 2');
     return reply.status(201).send(user);
   } catch (error) {
+    console.log('error', error);
     if (error instanceof UserAlreadyExistsError) {
       reply.status(400).send({
         message: error.message,

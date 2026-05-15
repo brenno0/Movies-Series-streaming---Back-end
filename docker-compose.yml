@@ -1,11 +1,42 @@
-version: '3'
-
 services:
-    nb-flix:
-        image: 'bitnami/postgresql'
-        ports:
-            - 5432:5432
-        environment:
-            - POSTGRESQL_USERNAME=docker
-            - POSTGRESQL_PASSWORD=docker
-            - POSTGRESQL_DATABASE=nbflix
+  nb-flix-database:
+    image: 'bitnami/postgresql'
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRESQL_USERNAME=docker
+      - POSTGRESQL_PASSWORD=docker
+      - POSTGRESQL_DATABASE=nbflix
+    networks: 
+      - nbflix-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docker -d nbflix"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nb-flix-backend: 
+    build: 
+      context: .
+    ports:
+      - 3333:3333
+    container_name: "nb-flix-backend"
+    depends_on: 
+      nb-flix-database:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "Running Prisma migrations..."
+        npx prisma migrate deploy --schema=./prisma/schema.prisma # migrate deploy é não-interativo e ideal para produção/startup
+        echo "Migrations applied. Starting application..."
+        exec node dist/server.js # Inicia sua aplicação Fastify
+    networks:
+      - nbflix-network
+
+networks:
+  nbflix-network:
+    name: nbflix-network
+    driver: bridge
+    external: true

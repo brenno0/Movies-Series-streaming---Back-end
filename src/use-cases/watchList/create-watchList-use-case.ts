@@ -1,3 +1,4 @@
+import type { Movie } from 'generated/prisma';
 import type { MoviesRepository } from '@/repositories/movies-repository';
 import type { WatchListRepository } from '@/repositories/watchList-repository';
 
@@ -16,12 +17,8 @@ export class CreateWatchListUseCase {
   ) {}
 
   async execute({ userId, movieId }: ICreateWatchListRequestDTO): Promise<{
-    watchList: void | {
-      userId: string;
-      movieId: string;
-      id: string;
-      createdAt: Date;
-    };
+    watchList: { userId: string; movieId: string; id: string; createdAt: Date };
+    movie: Movie;
   }> {
     const watchListAlreadyExists =
       await this.watchListRepository.findMovieByIdAndUserId(movieId, userId);
@@ -36,11 +33,13 @@ export class CreateWatchListUseCase {
       throw new ResourceAlreadyExists({ resource: 'Filme' });
     }
 
-    const watchList = await this.watchListRepository.create({
+    const created = await this.watchListRepository.create({
       movieId,
       userId,
     });
 
-    return { watchList };
+    if (!created) throw new Error('Falha ao criar entrada na lista');
+
+    return { watchList: created, movie: queryMovie };
   }
 }

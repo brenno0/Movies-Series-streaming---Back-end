@@ -26,7 +26,7 @@ export class WatchListPrismaRepository implements WatchListRepository {
   ): Promise<Watchlist | null> {
     const watchList = await prisma.watchlist.findFirst({
       where: {
-        id,
+        movieId: id,
         userId,
       },
     });

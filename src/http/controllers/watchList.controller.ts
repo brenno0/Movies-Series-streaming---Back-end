@@ -44,7 +44,18 @@ export const getAllWatchLists = async (
       params: title ? { title } : undefined,
     });
 
-    return reply.status(200).send(watchList);
+    const result = (watchList as any[]).map((item) => ({
+      id: item.id,
+      tmdbId: item.movie?.tmdbId ?? 0,
+      title: item.movie?.title ?? '',
+      overview: item.movie?.overview ?? '',
+      posterPath: item.movie?.posterPath ?? '',
+      voteAverage: item.movie?.voteAverage ?? 0,
+      createdAt: item.createdAt,
+      updatedAt: item.movie?.updatedAt ?? item.createdAt,
+    }));
+
+    return reply.status(200).send(result);
   } catch (err) {
     console.error(err);
     reply.status(500).send({
@@ -69,12 +80,21 @@ export const createWatchList = async (
 
     const { useCase: createWatchListUseCase } = makeCreateWatchList();
 
-    const { watchList } = await createWatchListUseCase.execute({
+    const { watchList, movie } = await createWatchListUseCase.execute({
       userId,
       movieId,
     });
 
-    return reply.status(201).send(watchList);
+    return reply.status(201).send({
+      id: watchList.id,
+      tmdbId: movie.tmdbId,
+      title: movie.title,
+      overview: movie.overview,
+      posterPath: movie.posterPath,
+      voteAverage: movie.voteAverage,
+      createdAt: watchList.createdAt,
+      updatedAt: movie.updatedAt,
+    });
   } catch (err) {
     if (err instanceof ResourceNotFoundError) {
       return reply.status(404).send({
@@ -84,11 +104,17 @@ export const createWatchList = async (
     }
 
     if (err instanceof ResourceAlreadyExists) {
-      return reply.status(400).send({
+      return reply.status(409).send({
         message: err.message,
-        error: 'ResourceNotFound',
+        error: 'ResourceAlreadyExists',
       });
     }
+
+    console.error(err);
+    return reply.status(500).send({
+      message: 'Erro Desconhecido no servidor',
+      error: 'UnknownError',
+    });
   }
 };
 

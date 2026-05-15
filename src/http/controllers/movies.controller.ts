@@ -19,7 +19,7 @@ export const createMovie = async (
     const { overview, posterPath, title, tmdbId, voteAverage } =
       createMovieBodySchema.parse(request.body);
 
-    createMovieUseCase.execute({
+    const movie = await createMovieUseCase.execute({
       overview,
       posterPath,
       title,
@@ -27,7 +27,7 @@ export const createMovie = async (
       voteAverage,
     });
 
-    return reply.status(201).send();
+    return reply.status(201).send(movie);
   } catch {
     throw new Error('Erro desconhecido no servidor');
   }

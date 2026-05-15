@@ -204,7 +204,14 @@ export const appRoutes = async (app: FastifyTypedInstance) => {
         }),
         response: {
           201: z.object({
-            message: z.string(),
+            id: z.string(),
+            tmdbId: z.number(),
+            title: z.string(),
+            overview: z.string(),
+            posterPath: z.string(),
+            voteAverage: z.number(),
+            createdAt: z.date(),
+            updatedAt: z.date(),
           }),
           400: z.object({
             message: z.string(),
