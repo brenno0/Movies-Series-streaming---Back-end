@@ -1,5 +1,6 @@
 import { app } from './app';
 import { env } from './env';
+import { startJanitor } from './interfaces/workers/janitor.worker';
 
 app
   .listen({
@@ -8,4 +9,5 @@ app
   })
   .then(() => {
     console.log('Server is running!');
+    startJanitor();
   });

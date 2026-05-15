@@ -14,8 +14,11 @@ import {
 import { ZodError } from 'zod';
 
 import { env } from './env';
-import { appRoutes } from './http/routes';
-import { prisma } from './lib/prisma';
+import { prisma } from './infrastructure/database/prisma';
+import { addonsRoutes } from './interfaces/http/routes/addons.routes';
+import { authRoutes } from './interfaces/http/routes/auth.routes';
+import { catalogRoutes } from './interfaces/http/routes/catalog.routes';
+import { streamingRoutes } from './interfaces/http/routes/streaming.routes';
 
 export const app = fastify().withTypeProvider<ZodTypeProvider>();
 app.register(cors, {
@@ -28,8 +31,8 @@ app.setSerializerCompiler(serializerCompiler);
 app.register(fastifySwagger, {
   openapi: {
     info: {
-      title: 'BFinnance API',
-      version: '1.0.0',
+      title: 'nb-flix API',
+      version: '3.0.0',
     },
   },
   transform: jsonSchemaTransform,
@@ -48,7 +51,10 @@ app.register(fastifyJwt, {
 });
 app.register(multipart);
 
-app.register(appRoutes);
+app.register(authRoutes);
+app.register(catalogRoutes);
+app.register(streamingRoutes);
+app.register(addonsRoutes);
 
 app.setErrorHandler((error, _request, reply) => {
   if (error instanceof ZodError) {
