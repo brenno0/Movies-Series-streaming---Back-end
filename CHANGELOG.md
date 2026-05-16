@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.3.0](https://github.com/brenno0/Movies-Series-streaming---Back-end/compare/v2.2.3...v2.3.0) (2026-05-16)
+
+
+### Features
+
+* **core:** add entities (User, Movie, Stream), StreamMetadata value object, and PlaybackSession aggregate ([fd95bce](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/fd95bce6a4461ea3ccca592908ca3f4e96d88d4b))
+* **db:** redesign schema with AddonRegistry, MediaProgress, FileMetadata, PlaybackSession ([f497613](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/f4976131126a0d46d046c258567da51a2b4c0982))
+* **infra:** add FFmpeg wrapper with NVENC support and libx264 fallback ([f85aade](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/f85aadeac9cf74bd078755b7e8a6f797e7480053))
+* **infra:** add LocalSSD and GoogleDrive storage adapters ([b9ff3ee](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/b9ff3ee60173d3a6dbb4c2961498f53c98ab5175))
+* **infra:** add Redis cache layer with stream cache and rate limiting ([aa9b84a](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/aa9b84a7dd6ab95d3d387e361473c26696c01cde))
+* **ranking:** implement Stremio addon aggregation, stream scoring, and best-stream selection with Redis cache ([5581833](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/5581833de9fd6344527b7e23f5efa828960f99cf))
+* **streaming:** implement playback session lifecycle (start, update progress, end) ([895f009](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/895f0097d3f37482db6f8e17e11092640a8e7224))
+* **workers:** implement LRU janitor with disk threshold and 24h TTL eviction ([0b9e820](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/0b9e8203ad1aa10ea1682fe9a24ec4bf6af7d000))
+
 ### [2.2.3](https://github.com/brenno0/Movies-Series-streaming---Back-end/compare/v2.2.0...v2.2.3) (2026-05-15)
 
 ### [2.2.2](https://github.com/brenno0/Movies-Series-streaming---Back-end/compare/v2.2.1...v2.2.2) (2025-08-19)

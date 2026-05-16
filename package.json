@@ -1,6 +1,6 @@
 {
     "name": "bfinnances",
-    "version": "2.2.3",
+    "version": "2.3.0",
     "main": "src/server.js",
     "scripts": {
         "dev": "tsx watch src/server.ts",
