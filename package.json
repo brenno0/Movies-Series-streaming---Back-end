@@ -63,11 +63,9 @@
         "@prisma/client": "6.10.1",
         "@vitest/ui": "3.2.4",
         "bcryptjs": "3.0.2",
-        "check-disk-space": "3.4.0",
         "dotenv": "16.5.0",
         "fastify": "5.4.0",
         "fastify-type-provider-zod": "4.0.0",
-        "googleapis": "171.4.0",
         "ioredis": "5.10.1",
         "prisma": "6.10.1",
         "zod": "3.25.67"

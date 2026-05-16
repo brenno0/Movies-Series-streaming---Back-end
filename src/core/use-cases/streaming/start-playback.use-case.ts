@@ -1,8 +1,7 @@
-import type { FileMetadataRepository } from '@/infrastructure/database/repositories/file-metadata.repository';
 import type { PlaybackSessionRepository } from '@/infrastructure/database/repositories/playback-session.repository';
-import { downloadFromDrive } from '@/infrastructure/storage/google-drive.adapter';
-import { hlsOutputPath, hlsPlaylistPath } from '@/infrastructure/storage/local-ssd.adapter';
-import { generateHLS } from '@/infrastructure/video/ffmpeg.wrapper';
+import type { AddonRegistryRepository } from '@/infrastructure/database/repositories/addon-registry.repository';
+import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
+import { GetBestStreamUseCase } from '../ranking/get-best-stream.use-case';
 
 interface StartPlaybackRequest {
   userId: string;
@@ -11,44 +10,35 @@ interface StartPlaybackRequest {
 
 interface StartPlaybackResponse {
   sessionId: string;
-  playlistUrl: string;
+  streamUrl: string;
+  quality: string;
+  source: string;
 }
 
 export class StartPlaybackUseCase {
+  private getBestStream: GetBestStreamUseCase;
+
   constructor(
     private readonly playbackSessionRepository: PlaybackSessionRepository,
-    private readonly fileMetadataRepository: FileMetadataRepository,
-  ) {}
+    addonRepository: AddonRegistryRepository,
+    moviesRepository: MoviesRepository,
+  ) {
+    this.getBestStream = new GetBestStreamUseCase(addonRepository, moviesRepository);
+  }
 
   async execute({ userId, movieId }: StartPlaybackRequest): Promise<StartPlaybackResponse> {
-    let fileMeta = await this.fileMetadataRepository.findByMovieId(movieId);
-
-    if (!fileMeta || fileMeta.status !== 'ready') {
-      fileMeta = await this.fileMetadataRepository.create({
-        movie: { connect: { id: movieId } },
-        status: 'processing',
-      });
-
-      if (fileMeta.driveFileId) {
-        const rawPath = `/tmp/nbflix-raw/${movieId}.mp4`;
-        await downloadFromDrive(fileMeta.driveFileId, rawPath);
-        const outputDir = hlsOutputPath(movieId);
-        await generateHLS(rawPath, outputDir);
-      }
-
-      fileMeta = await this.fileMetadataRepository.updateStatus(fileMeta.id, 'ready');
-    } else {
-      await this.fileMetadataRepository.updateLastAccessed(fileMeta.id);
-    }
+    const { best } = await this.getBestStream.execute(movieId);
 
     const session = await this.playbackSessionRepository.create({
       userId,
       movieId,
-      fileMetaId: fileMeta.id,
     });
 
-    const playlistUrl = `/stream/${movieId}/index.m3u8`;
-
-    return { sessionId: session.id, playlistUrl };
+    return {
+      sessionId: session.id,
+      streamUrl: best.url,
+      quality: best.quality,
+      source: best.addonSource,
+    };
   }
 }

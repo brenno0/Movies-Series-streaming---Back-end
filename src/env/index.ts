@@ -7,9 +7,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3333),
   JWT_SECRET: z.string(),
   REDIS_URL: z.string().default('redis://localhost:6379'),
-  GOOGLE_DRIVE_CREDENTIALS: z.string().optional(),
-  DISK_THRESHOLD_PERCENT: z.coerce.number().default(80),
-  STORAGE_PATH: z.string().default('/tmp/nbflix'),
+  REAL_DEBRID_TOKEN: z.string(),
 });
 
 const _env = envSchema.safeParse(process.env);

@@ -10,7 +10,7 @@ export const streamingRoutes = async (app: FastifyTypedInstance) => {
     schema: {
       operationId: 'startPlayback',
       body: z.object({ movieId: z.string() }),
-      response: { 200: z.object({ sessionId: z.string(), playlistUrl: z.string() }) },
+      response: { 200: z.object({ sessionId: z.string(), streamUrl: z.string(), quality: z.string(), source: z.string() }) },
     },
   }, startPlayback);
 

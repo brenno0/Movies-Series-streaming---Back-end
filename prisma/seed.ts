@@ -2,10 +2,17 @@ import { PrismaClient } from '../generated/prisma';
 
 const prisma = new PrismaClient();
 
+const RD_TOKEN = process.env.REAL_DEBRID_TOKEN;
+
+if (!RD_TOKEN) {
+  console.error('REAL_DEBRID_TOKEN not set in .env');
+  process.exit(1);
+}
+
 const ADDONS = [
   {
-    name: 'Torrentio',
-    url: 'https://torrentio.strem.fun',
+    name: 'Torrentio+RealDebrid',
+    url: `https://torrentio.strem.fun/realdebrid=${RD_TOKEN}`,
   },
   {
     name: 'Cinemeta',

@@ -12,8 +12,8 @@ export const startPlayback = async (request: FastifyRequest, reply: FastifyReply
   const { sub: userId } = request.user;
   const { movieId } = z.object({ movieId: z.string() }).parse(request.body);
 
-  const result = await makeStartPlayback().execute({ userId, movieId });
-  return reply.status(200).send(result);
+  const { sessionId, streamUrl, quality, source } = await makeStartPlayback().execute({ userId, movieId });
+  return reply.status(200).send({ sessionId, streamUrl, quality, source });
 };
 
 export const updateProgress = async (request: FastifyRequest, reply: FastifyReply) => {
