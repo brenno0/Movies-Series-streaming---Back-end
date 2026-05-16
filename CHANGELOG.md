@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.1.0](https://github.com/brenno0/Movies-Series-streaming---Back-end/compare/v2.3.1...v3.1.0) (2026-05-16)
+
+
+### Features
+
+* **catalog:** add imdbId field to Movie for Stremio addon protocol ([37e754d](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/37e754d04d851aa96b3c5ad0684ecb6d1aea8d32))
+* **db:** add Prisma seed with Torrentio and Cinemeta addon registry entries ([6f210ac](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/6f210ace1a21879099a8df804e250365080955f6))
+
 ### [2.3.1](https://github.com/brenno0/Movies-Series-streaming---Back-end/compare/v2.3.0...v2.3.1) (2026-05-16)
 
 ## [2.3.0](https://github.com/brenno0/Movies-Series-streaming---Back-end/compare/v2.2.3...v2.3.0) (2026-05-16)
