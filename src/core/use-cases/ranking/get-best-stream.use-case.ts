@@ -1,5 +1,6 @@
 import type { StreamEntity } from '@/core/entities/stream.entity';
 import type { AddonRegistryRepository } from '@/infrastructure/database/repositories/addon-registry.repository';
+import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
 import { deleteStreamCache, getStreamCache, setStreamCache } from '@/infrastructure/cache/stream-cache';
 import { StreamNotFoundError } from '@/shared/errors';
 
@@ -9,8 +10,11 @@ import { rankStreams } from './calculate-stream-score.use-case';
 export class GetBestStreamUseCase {
   private aggregator: AggregateStreamsUseCase;
 
-  constructor(private readonly addonRepository: AddonRegistryRepository) {
-    this.aggregator = new AggregateStreamsUseCase(addonRepository);
+  constructor(
+    private readonly addonRepository: AddonRegistryRepository,
+    private readonly moviesRepository: MoviesRepository,
+  ) {
+    this.aggregator = new AggregateStreamsUseCase(addonRepository, moviesRepository);
   }
 
   async execute(movieId: string): Promise<{ best: StreamEntity; ranked: StreamEntity[] }> {

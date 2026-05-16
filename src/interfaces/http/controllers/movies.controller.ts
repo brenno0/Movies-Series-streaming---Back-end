@@ -8,6 +8,7 @@ export const createMovie = async (request: FastifyRequest, reply: FastifyReply) 
     title: z.string(),
     overview: z.string(),
     tmdbId: z.number(),
+    imdbId: z.string().optional(),
     posterPath: z.string(),
     voteAverage: z.number(),
   }).parse(request.body);

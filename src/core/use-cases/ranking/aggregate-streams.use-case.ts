@@ -1,6 +1,7 @@
 import type { StreamEntity } from '@/core/entities/stream.entity';
 import type { AddonRegistryRepository } from '@/infrastructure/database/repositories/addon-registry.repository';
-import { AddonUnavailableError } from '@/shared/errors';
+import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
+import { AddonUnavailableError, ResourceNotFoundError } from '@/shared/errors';
 
 interface AddonStreamResponse {
   url: string;
@@ -12,9 +13,9 @@ interface AddonStreamResponse {
 
 async function fetchStreamsFromAddon(
   addonUrl: string,
-  movieId: string,
+  imdbId: string,
 ): Promise<AddonStreamResponse[]> {
-  const url = `${addonUrl}/stream/movie/${movieId}.json`;
+  const url = `${addonUrl}/stream/movie/${imdbId}.json`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
 
@@ -32,14 +33,21 @@ async function fetchStreamsFromAddon(
 }
 
 export class AggregateStreamsUseCase {
-  constructor(private readonly addonRepository: AddonRegistryRepository) {}
+  constructor(
+    private readonly addonRepository: AddonRegistryRepository,
+    private readonly moviesRepository: MoviesRepository,
+  ) {}
 
   async execute(movieId: string): Promise<StreamEntity[]> {
+    const movie = await this.moviesRepository.findById(movieId);
+    if (!movie) throw new ResourceNotFoundError({ resource: 'Movie' });
+    if (!movie.imdbId) throw new ResourceNotFoundError({ resource: 'Movie IMDB ID' });
+
     const addons = await this.addonRepository.findAll(true);
     const results: StreamEntity[] = [];
 
     const settled = await Promise.allSettled(
-      addons.map((addon) => fetchStreamsFromAddon(addon.url, movieId)),
+      addons.map((addon) => fetchStreamsFromAddon(addon.url, movie.imdbId!)),
     );
 
     settled.forEach((result, index) => {

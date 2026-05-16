@@ -6,6 +6,7 @@ interface CreateMovieRequest {
   title: string;
   overview: string;
   tmdbId: number;
+  imdbId?: string;
   posterPath: string;
   voteAverage: number;
 }

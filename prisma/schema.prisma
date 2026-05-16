@@ -26,8 +26,9 @@ model User {
 }
 
 model Movie {
-  id          String @id @default(uuid())
-  tmdbId      Int    @unique
+  id          String  @id @default(uuid())
+  tmdbId      Int     @unique
+  imdbId      String? @unique
   title       String
   overview    String
   posterPath  String

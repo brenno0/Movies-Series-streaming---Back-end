@@ -1,15 +1,15 @@
-import { hash } from 'bcryptjs';
 import { describe, it, expect, beforeEach } from 'vitest';
+import type { User } from 'generated/prisma';
 
 import type { UsersRepository } from '@/infrastructure/database/repositories/users.repository';
 import { UserAlreadyExistsError } from '@/shared/errors';
 import { CreateUserUseCase } from './create-user.use-case';
 
 function makeInMemoryUsersRepo(): UsersRepository {
-  const users: Awaited<ReturnType<UsersRepository['create']>>[] = [];
+  const users: User[] = [];
   return {
     async create(data) {
-      const user = { id: crypto.randomUUID(), createdAt: new Date(), updatedAt: new Date(), preferences: null, ...data };
+      const user = { preferences: null, ...data, id: crypto.randomUUID(), createdAt: new Date(), updatedAt: new Date() } as User;
       users.push(user);
       return user;
     },
