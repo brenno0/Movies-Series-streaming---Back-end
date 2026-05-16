@@ -65,6 +65,7 @@
         "@vitest/ui": "3.2.4",
         "bcrypt": "6.0.0",
         "bcryptjs": "3.0.2",
+        "check-disk-space": "3.4.0",
         "csv-parse": "5.6.0",
         "csvtojson": "2.0.10",
         "dotenv": "16.5.0",
