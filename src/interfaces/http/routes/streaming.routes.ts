@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import type { FastifyTypedInstance } from '@/@types/fastifyTypes';
 import { endPlayback, startPlayback, updateProgress } from '../controllers/streaming.controller';
+import { streamProxy } from '../controllers/stream-proxy.controller';
 import { verifyJWT } from '../middlewares/verifyJWT';
 
 export const streamingRoutes = async (app: FastifyTypedInstance) => {
@@ -31,4 +32,12 @@ export const streamingRoutes = async (app: FastifyTypedInstance) => {
       response: { 204: z.null() },
     },
   }, endPlayback);
+
+  // No JWT — browser video element can't send auth headers
+  app.get('/stream/proxy/:movieId', {
+    schema: {
+      operationId: 'streamProxy',
+      params: z.object({ movieId: z.string() }),
+    },
+  }, streamProxy);
 };
