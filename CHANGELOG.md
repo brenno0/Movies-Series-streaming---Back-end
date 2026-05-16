@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.2.0](https://github.com/brenno0/Movies-Series-streaming---Back-end/compare/v3.1.0...v3.2.0) (2026-05-16)
+
+
+### Features
+
+* **streaming:** replace FFmpeg/Drive pipeline with Real-Debrid direct stream via Torrentio ([c6a35a9](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/c6a35a9ac7ab74ce48236c5c3f85aee420de44c0))
+
 ## [3.1.0](https://github.com/brenno0/Movies-Series-streaming---Back-end/compare/v2.3.1...v3.1.0) (2026-05-16)
 
 
