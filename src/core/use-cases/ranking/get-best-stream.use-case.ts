@@ -17,8 +17,9 @@ export class GetBestStreamUseCase {
     this.aggregator = new AggregateStreamsUseCase(addonRepository, moviesRepository);
   }
 
-  async execute(movieId: string): Promise<{ best: StreamEntity; ranked: StreamEntity[] }> {
-    const cached = await getStreamCache(movieId);
+  async execute(movieId: string, lang: 'pt' | 'en' = 'pt'): Promise<{ best: StreamEntity; ranked: StreamEntity[] }> {
+    const cKey = `${movieId}:${lang}`;
+    const cached = await getStreamCache(cKey);
     if (cached && cached.length > 0) {
       return { best: cached[0], ranked: cached };
     }
@@ -26,13 +27,14 @@ export class GetBestStreamUseCase {
     const streams = await this.aggregator.execute(movieId);
     if (streams.length === 0) throw new StreamNotFoundError();
 
-    const ranked = rankStreams(streams);
-    await setStreamCache(movieId, ranked);
+    const ranked = rankStreams(streams, lang);
+    await setStreamCache(cKey, ranked);
 
     return { best: ranked[0], ranked };
   }
 
   async invalidate(movieId: string): Promise<void> {
-    await deleteStreamCache(movieId);
+    await deleteStreamCache(`${movieId}:pt`);
+    await deleteStreamCache(`${movieId}:en`);
   }
 }

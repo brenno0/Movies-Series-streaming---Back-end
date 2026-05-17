@@ -10,6 +10,9 @@ function makeStream(overrides: Partial<StreamEntity> = {}): StreamEntity {
     url: 'http://example.com/stream.mp4',
     quality: '1080p',
     codec: 'h264',
+    container: 'mp4',
+    audio: 'aac',
+    language: 'unknown',
     bitrate: 4000000,
     seeds: 500,
     addonSource: 'test-addon',
@@ -48,5 +51,33 @@ describe('rankStreams', () => {
     const ranked = rankStreams(streams);
     expect(ranked[0].id).toBe('high');
     expect(ranked[ranked.length - 1].id).toBe('low');
+  });
+
+  it('PT pool wins over better-quality EN stream', () => {
+    const streams = [
+      makeStream({ id: 'en-4k', quality: '4K', seeds: 1000, language: 'unknown' }),
+      makeStream({ id: 'pt-720', quality: '720p', seeds: 50, language: 'pt' }),
+    ];
+    const ranked = rankStreams(streams);
+    expect(ranked[0].id).toBe('pt-720');
+  });
+
+  it('falls back to EN pool when no PT exists', () => {
+    const streams = [
+      makeStream({ id: 'en', quality: '1080p', seeds: 300, language: 'unknown' }),
+      makeStream({ id: 'other', quality: '4K', seeds: 1000, language: 'other' }),
+    ];
+    const ranked = rankStreams(streams);
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0].id).toBe('en');
+  });
+
+  it('discards other-language streams entirely', () => {
+    const streams = [
+      makeStream({ id: 'ru', quality: '4K', seeds: 999, language: 'other' }),
+      makeStream({ id: 'pl', quality: '1080p', seeds: 500, language: 'other' }),
+    ];
+    const ranked = rankStreams(streams);
+    expect(ranked).toHaveLength(0);
   });
 });

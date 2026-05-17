@@ -2,25 +2,41 @@ import { z } from 'zod';
 
 import type { FastifyTypedInstance } from '@/@types/fastifyTypes';
 import { createMovie } from '../controllers/movies.controller';
+import { createSeries } from '../controllers/series.controller';
 import { getUser } from '../controllers/users.controller';
 import { createWatchlist, deleteWatchlist, getAllWatchlists } from '../controllers/watchlist.controller';
 import { verifyJWT } from '../middlewares/verifyJWT';
 
 export const catalogRoutes = async (app: FastifyTypedInstance) => {
   app.post('/movies', {
-    onRequest: [verifyJWT],
     schema: {
       operationId: 'createMovie',
       body: z.object({
         title: z.string(),
         overview: z.string(),
         tmdbId: z.number(),
+        imdbId: z.string().optional(),
         posterPath: z.string(),
         voteAverage: z.number(),
       }),
-      response: { 201: z.object({ id: z.string(), title: z.string(), tmdbId: z.number() }) },
+      response: { 201: z.object({ id: z.string(), title: z.string(), tmdbId: z.number(), imdbId: z.string().nullable().optional() }) },
     },
   }, createMovie);
+
+  app.post('/series', {
+    schema: {
+      operationId: 'createSeries',
+      body: z.object({
+        title: z.string(),
+        overview: z.string(),
+        tmdbId: z.number(),
+        imdbId: z.string().optional(),
+        posterPath: z.string(),
+        voteAverage: z.number(),
+      }),
+      response: { 201: z.object({ id: z.string(), title: z.string(), tmdbId: z.number(), imdbId: z.string().nullable().optional() }) },
+    },
+  }, createSeries);
 
   app.get('/user', {
     onRequest: [verifyJWT],

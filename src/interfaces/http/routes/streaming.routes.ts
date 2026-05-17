@@ -2,7 +2,9 @@ import { z } from 'zod';
 
 import type { FastifyTypedInstance } from '@/@types/fastifyTypes';
 import { endPlayback, startPlayback, updateProgress } from '../controllers/streaming.controller';
-import { streamProxy } from '../controllers/stream-proxy.controller';
+import { streamProxy, streamPrefetch } from '../controllers/stream-proxy.controller';
+import { seriesStreamProxy, seriesStreamPrefetch } from '../controllers/series-stream-proxy.controller';
+import { getSubtitles } from '../controllers/subtitles.controller';
 import { verifyJWT } from '../middlewares/verifyJWT';
 
 export const streamingRoutes = async (app: FastifyTypedInstance) => {
@@ -33,11 +35,49 @@ export const streamingRoutes = async (app: FastifyTypedInstance) => {
     },
   }, endPlayback);
 
+  app.get('/stream/prefetch/:movieId', {
+    schema: {
+      operationId: 'streamPrefetch',
+      params: z.object({ movieId: z.string() }),
+      querystring: z.object({ lang: z.enum(['pt', 'en']).optional() }),
+      response: { 200: z.object({ ready: z.boolean() }) },
+    },
+  }, streamPrefetch);
+
   // No JWT — browser video element can't send auth headers
   app.get('/stream/proxy/:movieId', {
     schema: {
       operationId: 'streamProxy',
       params: z.object({ movieId: z.string() }),
+      querystring: z.object({ lang: z.enum(['pt', 'en']).optional() }),
     },
   }, streamProxy);
+
+  // No JWT — browser video element can't send auth headers
+  app.get('/stream/series/prefetch/:seriesId', {
+    schema: {
+      operationId: 'seriesStreamPrefetch',
+      params: z.object({ seriesId: z.string() }),
+      querystring: z.object({ season: z.string().optional(), episode: z.string().optional(), lang: z.enum(['pt', 'en']).optional() }),
+      response: { 200: z.object({ ready: z.boolean() }) },
+    },
+  }, seriesStreamPrefetch);
+
+  // No JWT — browser video element can't send auth headers
+  app.get('/stream/series/proxy/:seriesId', {
+    schema: {
+      operationId: 'seriesStreamProxy',
+      params: z.object({ seriesId: z.string() }),
+      querystring: z.object({ season: z.string().optional(), episode: z.string().optional(), lang: z.enum(['pt', 'en']).optional() }),
+    },
+  }, seriesStreamProxy);
+
+  // No JWT — <track> elements can't send auth headers
+  app.get('/stream/subtitles/:movieId', {
+    schema: {
+      operationId: 'getSubtitles',
+      params: z.object({ movieId: z.string() }),
+      querystring: z.object({ lang: z.string().optional() }),
+    },
+  }, getSubtitles);
 };

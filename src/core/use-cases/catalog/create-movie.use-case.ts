@@ -15,9 +15,13 @@ export class CreateMovieUseCase {
   constructor(private readonly moviesRepository: MoviesRepository) {}
 
   async execute(data: CreateMovieRequest): Promise<Movie> {
-    const existing = await this.moviesRepository.findByTmdbId(data.tmdbId);
-    if (existing) return existing;
-
-    return this.moviesRepository.create(data);
+    return this.moviesRepository.upsert({
+      tmdbId: data.tmdbId,
+      imdbId: data.imdbId,
+      title: data.title,
+      overview: data.overview,
+      posterPath: data.posterPath,
+      voteAverage: data.voteAverage,
+    });
   }
 }

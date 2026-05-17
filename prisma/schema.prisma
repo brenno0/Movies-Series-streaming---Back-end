@@ -112,6 +112,19 @@ model PlaybackSession {
   fileMeta FileMetadata? @relation(fields: [fileMetaId], references: [id])
 }
 
+model Series {
+  id          String  @id @default(uuid())
+  tmdbId      Int     @unique
+  imdbId      String? @unique
+  title       String
+  overview    String
+  posterPath  String
+  voteAverage Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // ─── Ranking Context ──────────────────────────────────────────────────────────
 
 model AddonRegistry {

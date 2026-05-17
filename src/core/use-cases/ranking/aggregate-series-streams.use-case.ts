@@ -1,6 +1,6 @@
 import type { StreamEntity } from '@/core/entities/stream.entity';
 import type { AddonRegistryRepository } from '@/infrastructure/database/repositories/addon-registry.repository';
-import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
+import type { SeriesRepository } from '@/infrastructure/database/repositories/series.repository';
 import { AddonUnavailableError, ResourceNotFoundError } from '@/shared/errors';
 
 interface TorrentioStream {
@@ -31,16 +31,13 @@ function parseSeeds(title: string): number {
 }
 
 function parseAudio(filename: string, name = '', title = ''): 'aac' | 'ac3' | 'dts' | 'unknown' {
-  // Search across all three fields — Torrentio puts codec info in name/title too
   const lower = `${name} ${title} ${filename}`.toLowerCase();
   if (lower.includes('truehd') || lower.includes('atmos')) return 'dts';
   if (lower.includes('dts')) return 'dts';
   if (lower.includes('eac3') || lower.includes('ddp') || lower.includes('dd+')) return 'ac3';
-  // DD5.1 / DD2.0 = Dolby Digital = AC3 (but NOT AAC5.1)
   if (/\bdd[257][\.\s]?[012]\b/.test(lower) && !lower.includes('aac')) return 'ac3';
   if (lower.includes('ac3') || lower.includes('dolby digital')) return 'ac3';
   if (lower.includes('aac')) return 'aac';
-  // Bare 5.1 / 7.1 without AAC label → BluRay source → almost always AC3 or DTS
   if (/\b[57]\.1\b/.test(lower) && !lower.includes('aac')) return 'ac3';
   return 'unknown';
 }
@@ -52,14 +49,12 @@ function parseLanguage(name: string, title: string, filename: string): StreamEnt
     src.includes('dublado') || src.includes('pt-br') || src.includes('ptbr') ||
     src.includes('português') || src.includes('portugues') || src.includes('[pt]') ||
     src.includes('(pt)') || src.includes('.pt.') ||
-    src.includes('fogo e cinzas') || src.includes('fogo.e.cinzas') ||
     raw.includes('🇧🇷') || raw.includes('🇵🇹')
   ) return 'pt';
   if (src.includes('dual.audio') || src.includes('multi')) return 'multi';
   // dual without PT context = likely ES/LAT dual audio, treat as other
   if (src.includes('dual') && !src.includes('dublado') && !src.includes('pt-br') && !src.includes('ptbr')) return 'other';
   if (src.includes('dual')) return 'multi';
-  // Cyrillic script = RU/UA/BG content from Rutracker/Rutor
   if (/[Ѐ-ӿ]/.test(raw)) return 'other';
   if (
     src.includes('dubbing.pl') || src.includes('[pl]') || src.includes('(pl)') || src.includes('lektor') ||
@@ -80,26 +75,19 @@ function parseLanguage(name: string, title: string, filename: string): StreamEnt
 
 function isBrowserCompatible(name: string, title: string, filename: string): boolean {
   const src = `${name} ${title} ${filename}`.toLowerCase();
-  // Theater/cam recordings — always reject regardless of codec
   if (src.includes('camrip') || src.includes('cam-rip') || src.includes('hdcam') ||
       src.includes('dcprip') || src.includes('dcp-rip') || / dcp /i.test(` ${src} `) ||
       src.includes('line audio') || src.includes('telesync') || src.includes('telecine') ||
       src.includes('screener') || src.includes('ts ') || / ts\./i.test(src)) return false;
-  // Normalize dot-separated codec variants (h.265 → h265, x.264 → x264)
   const lower = filename.toLowerCase().replace(/([hx])\.26([45])/g, '$126$2');
   if (!lower.endsWith('.mp4') && !lower.endsWith('.mkv')) return false;
   const isHevc = lower.includes('hevc') || lower.includes('h265') || lower.includes('x265');
   const isH264 = lower.includes('h264') || lower.includes('x264') || lower.includes('avc');
-  // Explicitly HEVC without H264 → reject
   if (isHevc && !isH264) return false;
-  // 4K without explicit H264 is virtually always HEVC → reject
   const is4K = lower.includes('2160p') || lower.includes('4k') || lower.includes('uhd');
   if (is4K && !isH264) return false;
-  // AC3/DTS not supported natively on Linux browsers → reject
   const audio = parseAudio(filename, name, title);
   if (audio === 'ac3' || audio === 'dts') return false;
-  // MKV without explicit AAC → likely AC3/DTS BluRay rip → silent on Linux.
-  // Exception: PT-BR "Dublado" rips are commonly re-encoded with AAC but don't label it.
   const isPtBr = lower.includes('dublado') || lower.includes('pt-br') || lower.includes('ptbr');
   if (lower.endsWith('.mkv') && audio !== 'aac' && !isPtBr) return false;
   return true;
@@ -108,8 +96,10 @@ function isBrowserCompatible(name: string, title: string, filename: string): boo
 async function fetchStreamsFromAddon(
   addonUrl: string,
   imdbId: string,
+  season: number,
+  episode: number,
 ): Promise<TorrentioStream[]> {
-  const url = `${addonUrl}/stream/movie/${imdbId}.json`;
+  const url = `${addonUrl}/stream/series/${imdbId}:${season}:${episode}.json`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
 
@@ -126,22 +116,22 @@ async function fetchStreamsFromAddon(
   }
 }
 
-export class AggregateStreamsUseCase {
+export class AggregateSeriesStreamsUseCase {
   constructor(
     private readonly addonRepository: AddonRegistryRepository,
-    private readonly moviesRepository: MoviesRepository,
+    private readonly seriesRepository: SeriesRepository,
   ) {}
 
-  async execute(movieId: string): Promise<StreamEntity[]> {
-    const movie = await this.moviesRepository.findById(movieId);
-    if (!movie) throw new ResourceNotFoundError({ resource: 'Movie' });
-    if (!movie.imdbId) throw new ResourceNotFoundError({ resource: 'Movie IMDB ID' });
+  async execute(seriesId: string, season: number, episode: number): Promise<StreamEntity[]> {
+    const series = await this.seriesRepository.findById(seriesId);
+    if (!series) throw new ResourceNotFoundError({ resource: 'Series' });
+    if (!series.imdbId) throw new ResourceNotFoundError({ resource: 'Series IMDB ID' });
 
     const addons = await this.addonRepository.findAll(true);
     const results: StreamEntity[] = [];
 
     const settled = await Promise.allSettled(
-      addons.map((addon) => fetchStreamsFromAddon(addon.url, movie.imdbId!)),
+      addons.map((addon) => fetchStreamsFromAddon(addon.url, series.imdbId!, season, episode)),
     );
 
     settled.forEach((result, index) => {
@@ -157,7 +147,7 @@ export class AggregateStreamsUseCase {
 
         results.push({
           id: `${addon.id}-${i}`,
-          movieId,
+          movieId: seriesId,
           url: s.url,
           quality: parseQuality(name, filename),
           codec: parseCodec(filename),

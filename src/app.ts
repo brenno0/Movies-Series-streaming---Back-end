@@ -22,7 +22,10 @@ import { streamingRoutes } from './interfaces/http/routes/streaming.routes';
 
 export const app = fastify().withTypeProvider<ZodTypeProvider>();
 app.register(cors, {
-  allowedHeaders: '*',
+  origin: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'Range'],
+  exposedHeaders: ['Content-Range', 'Content-Length', 'Accept-Ranges', 'X-Stream-Audio', 'X-Stream-Codec', 'X-Stream-Language', 'X-Stream-Container'],
+  credentials: true,
 });
 
 app.setValidatorCompiler(validatorCompiler);
