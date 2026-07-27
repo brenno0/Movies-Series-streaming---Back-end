@@ -8,6 +8,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string(),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   REAL_DEBRID_TOKEN: z.string(),
+  DFINDEXER_URL: z.string().default('http://host.docker.internal:7006'),
 });
 
 const _env = envSchema.safeParse(process.env);
