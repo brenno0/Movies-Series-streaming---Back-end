@@ -1,176 +1,54 @@
 import type { StreamEntity } from '@/core/entities/stream.entity';
-import type { AddonRegistryRepository } from '@/infrastructure/database/repositories/addon-registry.repository';
 import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
-import { AddonUnavailableError, ResourceNotFoundError } from '@/shared/errors';
+import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
+import type { RealDebridClient } from '@/infrastructure/real-debrid/real-debrid.client';
+import { ResourceNotFoundError } from '@/shared/errors';
 
-interface TorrentioStream {
-  name?: string;
-  title?: string;
-  url?: string;
-  behaviorHints?: { filename?: string; bingeGroup?: string };
-}
+import { buildMovieQuery } from './build-dfindexer-query';
+import { rankCandidates } from './calculate-stream-score.use-case';
+import { isBrowserCompatibleRelease, parseAudio, parseCodec, parseLanguage, parseQuality } from './parse-dfindexer-release';
 
-function parseQuality(name: string, filename: string): StreamEntity['quality'] {
-  const src = `${name} ${filename}`.toLowerCase();
-  if (src.includes('2160p') || src.includes('4k') || src.includes('uhd')) return '4K';
-  if (src.includes('1080p')) return '1080p';
-  if (src.includes('720p')) return '720p';
-  return '480p';
-}
-
-function parseCodec(filename: string): StreamEntity['codec'] {
-  const f = filename.toLowerCase();
-  if (f.includes('av1')) return 'av1';
-  if (f.includes('hevc') || f.includes('h265') || f.includes('x265')) return 'hevc';
-  return 'h264';
-}
-
-function parseSeeds(title: string): number {
-  const match = title.match(/👤\s*(\d+)/);
-  return match ? parseInt(match[1], 10) : 0;
-}
-
-function parseAudio(filename: string, name = '', title = ''): 'aac' | 'ac3' | 'dts' | 'unknown' {
-  // Search across all three fields — Torrentio puts codec info in name/title too
-  const lower = `${name} ${title} ${filename}`.toLowerCase();
-  if (lower.includes('truehd') || lower.includes('atmos')) return 'dts';
-  if (lower.includes('dts')) return 'dts';
-  if (lower.includes('eac3') || lower.includes('ddp') || lower.includes('dd+')) return 'ac3';
-  // DD5.1 / DD2.0 = Dolby Digital = AC3 (but NOT AAC5.1)
-  if (/\bdd[257][\.\s]?[012]\b/.test(lower) && !lower.includes('aac')) return 'ac3';
-  if (lower.includes('ac3') || lower.includes('dolby digital')) return 'ac3';
-  if (lower.includes('aac')) return 'aac';
-  // Bare 5.1 / 7.1 without AAC label → BluRay source → almost always AC3 or DTS
-  if (/\b[57]\.1\b/.test(lower) && !lower.includes('aac')) return 'ac3';
-  return 'unknown';
-}
-
-function parseLanguage(name: string, title: string, filename: string): StreamEntity['language'] {
-  const raw = `${name} ${title} ${filename}`;
-  const src = raw.toLowerCase();
-  if (
-    src.includes('dublado') || src.includes('pt-br') || src.includes('ptbr') ||
-    src.includes('português') || src.includes('portugues') || src.includes('[pt]') ||
-    src.includes('(pt)') || src.includes('.pt.') ||
-    src.includes('fogo e cinzas') || src.includes('fogo.e.cinzas') ||
-    raw.includes('🇧🇷') || raw.includes('🇵🇹')
-  ) return 'pt';
-  if (src.includes('dual.audio') || src.includes('multi')) return 'multi';
-  // dual without PT context = likely ES/LAT dual audio, treat as other
-  if (src.includes('dual') && !src.includes('dublado') && !src.includes('pt-br') && !src.includes('ptbr')) return 'other';
-  if (src.includes('dual')) return 'multi';
-  // Cyrillic script = RU/UA/BG content from Rutracker/Rutor
-  if (/[Ѐ-ӿ]/.test(raw)) return 'other';
-  if (
-    src.includes('dubbing.pl') || src.includes('[pl]') || src.includes('(pl)') || src.includes('lektor') ||
-    src.includes('deutsch') || src.includes('[de]') || src.includes('(de)') ||
-    src.includes('castellano') || src.includes('español') || src.includes('[es]') || src.includes('(es)') ||
-    src.includes('truefrench') || src.includes('[fr]') || src.includes('(fr)') ||
-    src.includes('italiano') || src.includes('[it]') || src.includes('(it)') ||
-    src.includes('turkish') || src.includes('[tr]') || src.includes('(tr)') ||
-    src.includes('arabic') || src.includes('[ar]') ||
-    src.includes('korean') || src.includes('[ko]') ||
-    src.includes('japanese') || src.includes('[ja]') ||
-    src.includes('[hr]') || src.includes('(hr)') || src.includes('[sr]') || src.includes('(sr)') ||
-    src.includes('[cs]') || src.includes('[sk]') || src.includes('[hu]') || src.includes('[ro]') ||
-    src.includes('lektor') || src.includes('napisy') || src.includes('skakutavci')
-  ) return 'other';
-  return 'unknown';
-}
-
-function isBrowserCompatible(name: string, title: string, filename: string): boolean {
-  const src = `${name} ${title} ${filename}`.toLowerCase();
-  // Theater/cam recordings — always reject regardless of codec
-  if (src.includes('camrip') || src.includes('cam-rip') || src.includes('hdcam') ||
-      src.includes('dcprip') || src.includes('dcp-rip') || / dcp /i.test(` ${src} `) ||
-      src.includes('line audio') || src.includes('telesync') || src.includes('telecine') ||
-      src.includes('screener') || src.includes('ts ') || / ts\./i.test(src)) return false;
-  // Normalize dot-separated codec variants (h.265 → h265, x.264 → x264)
-  const lower = filename.toLowerCase().replace(/([hx])\.26([45])/g, '$126$2');
-  if (!lower.endsWith('.mp4') && !lower.endsWith('.mkv')) return false;
-  const isHevc = lower.includes('hevc') || lower.includes('h265') || lower.includes('x265');
-  const isH264 = lower.includes('h264') || lower.includes('x264') || lower.includes('avc');
-  // Explicitly HEVC without H264 → reject
-  if (isHevc && !isH264) return false;
-  // 4K without explicit H264 is virtually always HEVC → reject
-  const is4K = lower.includes('2160p') || lower.includes('4k') || lower.includes('uhd');
-  if (is4K && !isH264) return false;
-  // AC3/DTS not supported natively on Linux browsers → reject
-  const audio = parseAudio(filename, name, title);
-  if (audio === 'ac3' || audio === 'dts') return false;
-  // MKV without explicit AAC → likely AC3/DTS BluRay rip → silent on Linux.
-  // Exception: PT-BR "Dublado" rips are commonly re-encoded with AAC but don't label it.
-  const isPtBr = lower.includes('dublado') || lower.includes('pt-br') || lower.includes('ptbr');
-  if (lower.endsWith('.mkv') && audio !== 'aac' && !isPtBr) return false;
-  return true;
-}
-
-async function fetchStreamsFromAddon(
-  addonUrl: string,
-  imdbId: string,
-): Promise<TorrentioStream[]> {
-  const url = `${addonUrl}/stream/movie/${imdbId}.json`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new AddonUnavailableError(addonUrl);
-    const data = await res.json() as { streams?: TorrentioStream[] };
-    return data.streams ?? [];
-  } catch (err) {
-    if ((err as Error).name === 'AbortError') throw new AddonUnavailableError(addonUrl);
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+const TOP_N_TO_RESOLVE = 8;
 
 export class AggregateStreamsUseCase {
   constructor(
-    private readonly addonRepository: AddonRegistryRepository,
+    private readonly dfindexerClient: DfindexerClient,
+    private readonly realDebridClient: RealDebridClient,
     private readonly moviesRepository: MoviesRepository,
   ) {}
 
-  async execute(movieId: string): Promise<StreamEntity[]> {
+  async execute(movieId: string, preferLang: 'pt' | 'en' = 'pt'): Promise<StreamEntity[]> {
     const movie = await this.moviesRepository.findById(movieId);
     if (!movie) throw new ResourceNotFoundError({ resource: 'Movie' });
-    if (!movie.imdbId) throw new ResourceNotFoundError({ resource: 'Movie IMDB ID' });
 
-    const addons = await this.addonRepository.findAll(true);
-    const results: StreamEntity[] = [];
+    const query = buildMovieQuery(movie.title);
+    const rawCandidates = await this.dfindexerClient.searchAll(query);
+    const compatible = rawCandidates.filter(isBrowserCompatibleRelease);
+    const ranked = rankCandidates(compatible, preferLang).slice(0, TOP_N_TO_RESOLVE);
 
-    const settled = await Promise.allSettled(
-      addons.map((addon) => fetchStreamsFromAddon(addon.url, movie.imdbId!)),
+    const resolved = await Promise.allSettled(
+      ranked.map((c) => this.realDebridClient.resolveMagnetToUrl(c.magnet_link, c.info_hash)),
     );
 
-    settled.forEach((result, index) => {
-      if (result.status !== 'fulfilled') return;
-      const addon = addons[index];
-
-      result.value.forEach((s, i) => {
-        if (!s.url) return;
-        const filename = s.behaviorHints?.filename ?? '';
-        const name = s.name ?? '';
-        const title = s.title ?? '';
-        if (!isBrowserCompatible(name, title, filename)) return;
-
-        results.push({
-          id: `${addon.id}-${i}`,
-          movieId,
-          url: s.url,
-          quality: parseQuality(name, filename),
-          codec: parseCodec(filename),
-          container: filename.toLowerCase().endsWith('.mp4') ? 'mp4' : 'mkv',
-          audio: parseAudio(filename),
-          language: parseLanguage(name, title, filename),
-          bitrate: 0,
-          seeds: parseSeeds(title),
-          addonSource: addon.name,
-        });
+    const streams: StreamEntity[] = [];
+    resolved.forEach((result, index) => {
+      if (result.status !== 'fulfilled' || !result.value) return;
+      const candidate = ranked[index];
+      streams.push({
+        id: candidate.info_hash,
+        movieId,
+        url: result.value.url,
+        quality: parseQuality(candidate),
+        codec: parseCodec(candidate),
+        container: result.value.container,
+        audio: parseAudio(candidate),
+        language: parseLanguage(candidate),
+        bitrate: 0,
+        seeds: candidate.seed_count,
+        scraperSource: candidate.scraperSource,
       });
     });
 
-    return results;
+    return streams;
   }
 }

@@ -1,6 +1,7 @@
 import type { StreamEntity } from '@/core/entities/stream.entity';
-import type { AddonRegistryRepository } from '@/infrastructure/database/repositories/addon-registry.repository';
 import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
+import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
+import type { RealDebridClient } from '@/infrastructure/real-debrid/real-debrid.client';
 import { deleteStreamCache, getStreamCache, setStreamCache } from '@/infrastructure/cache/stream-cache';
 import { StreamNotFoundError } from '@/shared/errors';
 
@@ -11,10 +12,11 @@ export class GetBestStreamUseCase {
   private aggregator: AggregateStreamsUseCase;
 
   constructor(
-    private readonly addonRepository: AddonRegistryRepository,
+    dfindexerClient: DfindexerClient,
+    realDebridClient: RealDebridClient,
     private readonly moviesRepository: MoviesRepository,
   ) {
-    this.aggregator = new AggregateStreamsUseCase(addonRepository, moviesRepository);
+    this.aggregator = new AggregateStreamsUseCase(dfindexerClient, realDebridClient, moviesRepository);
   }
 
   async execute(movieId: string, lang: 'pt' | 'en' = 'pt'): Promise<{ best: StreamEntity; ranked: StreamEntity[] }> {
@@ -24,7 +26,7 @@ export class GetBestStreamUseCase {
       return { best: cached[0], ranked: cached };
     }
 
-    const streams = await this.aggregator.execute(movieId);
+    const streams = await this.aggregator.execute(movieId, lang);
     if (streams.length === 0) throw new StreamNotFoundError();
 
     const ranked = rankStreams(streams, lang);

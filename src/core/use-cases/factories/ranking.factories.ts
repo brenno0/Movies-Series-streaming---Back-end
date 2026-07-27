@@ -1,18 +1,29 @@
-import { AddonRegistryPrismaRepository } from '@/infrastructure/database/repositories/addon-registry.repository';
+import { env } from '@/env';
 import { MoviesPrismaRepository } from '@/infrastructure/database/repositories/movies.repository';
 import { SeriesPrismaRepository } from '@/infrastructure/database/repositories/series.repository';
+import { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
+import { RealDebridClient } from '@/infrastructure/real-debrid/real-debrid.client';
+
 import { AggregateStreamsUseCase } from '../ranking/aggregate-streams.use-case';
 import { GetBestStreamUseCase } from '../ranking/get-best-stream.use-case';
 import { GetBestSeriesStreamUseCase } from '../ranking/get-best-series-stream.use-case';
 
+export function makeDfindexerClient() {
+  return new DfindexerClient(env.DFINDEXER_URL);
+}
+
+export function makeRealDebridClient() {
+  return new RealDebridClient(env.REAL_DEBRID_TOKEN);
+}
+
 export function makeAggregateStreams() {
-  return new AggregateStreamsUseCase(new AddonRegistryPrismaRepository(), new MoviesPrismaRepository());
+  return new AggregateStreamsUseCase(makeDfindexerClient(), makeRealDebridClient(), new MoviesPrismaRepository());
 }
 
 export function makeGetBestStream() {
-  return new GetBestStreamUseCase(new AddonRegistryPrismaRepository(), new MoviesPrismaRepository());
+  return new GetBestStreamUseCase(makeDfindexerClient(), makeRealDebridClient(), new MoviesPrismaRepository());
 }
 
 export function makeGetBestSeriesStream() {
-  return new GetBestSeriesStreamUseCase(new AddonRegistryPrismaRepository(), new SeriesPrismaRepository());
+  return new GetBestSeriesStreamUseCase(makeDfindexerClient(), makeRealDebridClient(), new SeriesPrismaRepository());
 }

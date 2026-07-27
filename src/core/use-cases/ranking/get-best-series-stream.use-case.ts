@@ -1,6 +1,7 @@
 import type { StreamEntity } from '@/core/entities/stream.entity';
-import type { AddonRegistryRepository } from '@/infrastructure/database/repositories/addon-registry.repository';
 import type { SeriesRepository } from '@/infrastructure/database/repositories/series.repository';
+import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
+import type { RealDebridClient } from '@/infrastructure/real-debrid/real-debrid.client';
 import { deleteStreamCache, getStreamCache, setStreamCache } from '@/infrastructure/cache/stream-cache';
 import { StreamNotFoundError } from '@/shared/errors';
 
@@ -11,10 +12,11 @@ export class GetBestSeriesStreamUseCase {
   private aggregator: AggregateSeriesStreamsUseCase;
 
   constructor(
-    private readonly addonRepository: AddonRegistryRepository,
+    dfindexerClient: DfindexerClient,
+    realDebridClient: RealDebridClient,
     private readonly seriesRepository: SeriesRepository,
   ) {
-    this.aggregator = new AggregateSeriesStreamsUseCase(addonRepository, seriesRepository);
+    this.aggregator = new AggregateSeriesStreamsUseCase(dfindexerClient, realDebridClient, seriesRepository);
   }
 
   private cacheKey(seriesId: string, season: number, episode: number, lang: 'pt' | 'en'): string {
@@ -28,7 +30,7 @@ export class GetBestSeriesStreamUseCase {
       return { best: cached[0], ranked: cached };
     }
 
-    const streams = await this.aggregator.execute(seriesId, season, episode);
+    const streams = await this.aggregator.execute(seriesId, season, episode, lang);
     if (streams.length === 0) throw new StreamNotFoundError();
 
     const ranked = rankStreams(streams, lang);
