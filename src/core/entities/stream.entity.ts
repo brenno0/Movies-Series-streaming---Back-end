@@ -1,3 +1,5 @@
+import type { ScraperType } from '@/infrastructure/dfindexer/dfindexer.types';
+
 export interface StreamEntity {
   id: string;
   movieId: string;
@@ -9,6 +11,6 @@ export interface StreamEntity {
   language: 'pt' | 'en' | 'multi' | 'unknown' | 'other';
   bitrate: number;
   seeds: number;
-  addonSource: string;
+  scraperSource: ScraperType;
   score?: number;
 }
