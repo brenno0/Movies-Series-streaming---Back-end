@@ -124,14 +124,3 @@ model Series {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
-// ─── Ranking Context ──────────────────────────────────────────────────────────
-
-model AddonRegistry {
-  id        String   @id @default(uuid())
-  name      String
-  url       String   @unique
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}

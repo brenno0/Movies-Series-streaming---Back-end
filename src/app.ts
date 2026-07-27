@@ -15,7 +15,6 @@ import { ZodError } from 'zod';
 
 import { env } from './env';
 import { prisma } from './infrastructure/database/prisma';
-import { addonsRoutes } from './interfaces/http/routes/addons.routes';
 import { authRoutes } from './interfaces/http/routes/auth.routes';
 import { catalogRoutes } from './interfaces/http/routes/catalog.routes';
 import { streamingRoutes } from './interfaces/http/routes/streaming.routes';
@@ -57,7 +56,6 @@ app.register(multipart);
 app.register(authRoutes);
 app.register(catalogRoutes);
 app.register(streamingRoutes);
-app.register(addonsRoutes);
 
 app.setErrorHandler((error, _request, reply) => {
   if (error instanceof ZodError) {
