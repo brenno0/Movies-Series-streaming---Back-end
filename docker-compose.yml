@@ -2,12 +2,14 @@ services:
   nb-flix-database:
     image: 'bitnami/postgresql'
     ports:
-      - 5432:5432
+      - 5433:5432
     environment:
       - POSTGRESQL_USERNAME=docker
       - POSTGRESQL_PASSWORD=docker
       - POSTGRESQL_DATABASE=nbflix
-    networks: 
+    volumes:
+      - postgres-data:/bitnami/postgresql
+    networks:
       - nbflix-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U docker -d nbflix"]
@@ -35,6 +37,9 @@ services:
     container_name: "nb-flix-backend"
     environment:
       - REDIS_URL=redis://nb-flix-cache:6379
+      - DFINDEXER_URL=http://host.docker.internal:7006
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       nb-flix-database:
         condition: service_healthy
@@ -50,6 +55,9 @@ services:
         exec node dist/server.js # Inicia sua aplicação Fastify
     networks:
       - nbflix-network
+
+volumes:
+  postgres-data:
 
 networks:
   nbflix-network:
