@@ -5,7 +5,9 @@ const SCRAPERS: ScraperType[] = ['starck', 'rede', 'tfilme', 'comand', 'bludv'];
 // Sites behind Cloudflare per dfindexer's own README — need FlareSolverr to pass the challenge.
 const NEEDS_FLARESOLVERR: Set<ScraperType> = new Set(['comand', 'bludv']);
 
-const REQUEST_TIMEOUT_MS = 25000;
+// dfindexer scrapes source sites live on cache miss (several pages per site) — a cold
+// query can legitimately take 30-45s. Timeout generous enough to survive that.
+const REQUEST_TIMEOUT_MS = 60000;
 
 export class DfindexerClient {
   constructor(private readonly baseUrl: string) {}

@@ -20,8 +20,18 @@ export function scoreCandidate(candidate: DfindexerCandidate): number {
   );
 }
 
-export function rankCandidates(candidates: DfindexerCandidate[], preferLang: 'pt' | 'en' = 'pt'): DfindexerCandidate[] {
-  const filtered = candidates.filter((c) => c.similarity >= MIN_SIMILARITY);
+export function rankCandidates(candidates: DfindexerCandidate[], preferLang: 'pt' | 'en' = 'pt', imdbId?: string): DfindexerCandidate[] {
+  let pooled = candidates.filter((c) => c.similarity >= MIN_SIMILARITY);
+
+  // dfindexer's own similarity score can give a false 1.0 to unrelated titles that merely
+  // share a common word (e.g. query "Soul" matching "Soul Surfer" or a translated "Le Mangeur
+  // d'Âmes"). When we know the real IMDB id, use it as a hard disambiguator.
+  if (imdbId) {
+    const imdbMatches = pooled.filter((c) => c.imdb === imdbId);
+    if (imdbMatches.length > 0) pooled = imdbMatches;
+  }
+
+  const filtered = pooled;
   const ptPool = filtered.filter((c) => parseLanguage(c) === 'pt');
   const otherPool = filtered.filter((c) => ['en', 'multi', 'unknown'].includes(parseLanguage(c)));
 

@@ -74,10 +74,10 @@ export class RealDebridClient {
     infoHash: string,
     episodeHint?: { season: number; episode: number },
   ): Promise<{ url: string; filename: string; container: 'mp4' | 'mkv' } | null> {
-    const cached = await redis.get(cacheKey(infoHash));
-    if (cached) return JSON.parse(cached) as { url: string; filename: string; container: 'mp4' | 'mkv' };
-
     try {
+      const cached = await redis.get(cacheKey(infoHash));
+      if (cached) return JSON.parse(cached) as { url: string; filename: string; container: 'mp4' | 'mkv' };
+
       const { id } = await this.addMagnet(magnet);
       let info = await this.getTorrentInfo(id);
 

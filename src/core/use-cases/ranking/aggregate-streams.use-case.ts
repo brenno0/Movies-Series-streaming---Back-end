@@ -24,7 +24,8 @@ export class AggregateStreamsUseCase {
     const query = buildMovieQuery(movie.title);
     const rawCandidates = await this.dfindexerClient.searchAll(query);
     const compatible = rawCandidates.filter(isBrowserCompatibleRelease);
-    const ranked = rankCandidates(compatible, preferLang).slice(0, TOP_N_TO_RESOLVE);
+    const ranked = rankCandidates(compatible, preferLang, movie.imdbId ?? undefined).slice(0, TOP_N_TO_RESOLVE);
+    console.log(`[aggregate] movie=${movieId} query="${query}" raw=${rawCandidates.length} compatible=${compatible.length} ranked=${ranked.length}`);
 
     const resolved = await Promise.allSettled(
       ranked.map((c) => this.realDebridClient.resolveMagnetToUrl(c.magnet_link, c.info_hash)),
