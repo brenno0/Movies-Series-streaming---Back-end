@@ -8,7 +8,7 @@ import { buildEpisodeQuery } from './build-dfindexer-query';
 import { rankCandidates } from './calculate-stream-score.use-case';
 import { isBrowserCompatibleRelease, parseAudio, parseCodec, parseLanguage, parseQuality } from './parse-dfindexer-release';
 
-const TOP_N_TO_RESOLVE = 8;
+const TOP_N_TO_RESOLVE = 20;
 
 export class AggregateSeriesStreamsUseCase {
   constructor(

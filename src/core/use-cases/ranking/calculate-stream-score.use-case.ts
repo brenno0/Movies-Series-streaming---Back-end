@@ -21,17 +21,7 @@ export function scoreCandidate(candidate: DfindexerCandidate): number {
 }
 
 export function rankCandidates(candidates: DfindexerCandidate[], preferLang: 'pt' | 'en' = 'pt', imdbId?: string): DfindexerCandidate[] {
-  let pooled = candidates.filter((c) => c.similarity >= MIN_SIMILARITY);
-
-  // dfindexer's own similarity score can give a false 1.0 to unrelated titles that merely
-  // share a common word (e.g. query "Soul" matching "Soul Surfer" or a translated "Le Mangeur
-  // d'Âmes"). When we know the real IMDB id, use it as a hard disambiguator.
-  if (imdbId) {
-    const imdbMatches = pooled.filter((c) => c.imdb === imdbId);
-    if (imdbMatches.length > 0) pooled = imdbMatches;
-  }
-
-  const filtered = pooled;
+  const filtered = candidates.filter((c) => c.similarity >= MIN_SIMILARITY);
   const ptPool = filtered.filter((c) => parseLanguage(c) === 'pt');
   const otherPool = filtered.filter((c) => ['en', 'multi', 'unknown'].includes(parseLanguage(c)));
 
@@ -39,7 +29,19 @@ export function rankCandidates(candidates: DfindexerCandidate[], preferLang: 'pt
     ? (ptPool.length > 0 ? ptPool : otherPool)
     : (otherPool.length > 0 ? otherPool : ptPool);
 
-  return [...pool].sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
+  // dfindexer's own similarity score can give a false 1.0 to unrelated titles that merely
+  // share a common word (e.g. query "Soul" matching "Soul Surfer" or a translated "Le Mangeur
+  // d'Âmes"). When we know the real IMDB id, sort those matches first — but don't discard the
+  // rest: if every IMDB-matched release turns out dead/DMCA-flagged on Real-Debrid, the next
+  // candidates are still there as fallback instead of leaving an empty pool.
+  return [...pool].sort((a, b) => {
+    if (imdbId) {
+      const aMatch = a.imdb === imdbId ? 1 : 0;
+      const bMatch = b.imdb === imdbId ? 1 : 0;
+      if (aMatch !== bMatch) return bMatch - aMatch;
+    }
+    return scoreCandidate(b) - scoreCandidate(a);
+  });
 }
 
 function languageScore(stream: StreamEntity): number {
