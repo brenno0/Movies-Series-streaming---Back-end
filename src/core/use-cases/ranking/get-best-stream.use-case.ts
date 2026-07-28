@@ -1,6 +1,7 @@
 import type { StreamEntity } from '@/core/entities/stream.entity';
 import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
 import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
+import type { ScraperType } from '@/infrastructure/dfindexer/dfindexer.types';
 import type { RealDebridClient } from '@/infrastructure/real-debrid/real-debrid.client';
 import { deleteStreamCache, getStreamCache, setStreamCache } from '@/infrastructure/cache/stream-cache';
 import { StreamNotFoundError } from '@/shared/errors';
@@ -19,20 +20,21 @@ export class GetBestStreamUseCase {
     this.aggregator = new AggregateStreamsUseCase(dfindexerClient, realDebridClient, moviesRepository);
   }
 
-  async execute(movieId: string, lang: 'pt' | 'en' = 'pt'): Promise<{ best: StreamEntity; ranked: StreamEntity[] }> {
+  async execute(movieId: string, lang: 'pt' | 'en' = 'pt', sourceFilter?: ScraperType): Promise<{ best: StreamEntity; ranked: StreamEntity[] }> {
     const cKey = `${movieId}:${lang}`;
-    const cached = await getStreamCache(cKey);
-    if (cached && cached.length > 0) {
-      return { best: cached[0], ranked: cached };
+    let ranked = await getStreamCache(cKey);
+
+    if (!ranked || ranked.length === 0) {
+      const streams = await this.aggregator.execute(movieId, lang);
+      if (streams.length === 0) throw new StreamNotFoundError();
+      ranked = rankStreams(streams, lang);
+      await setStreamCache(cKey, ranked);
     }
 
-    const streams = await this.aggregator.execute(movieId, lang);
-    if (streams.length === 0) throw new StreamNotFoundError();
+    const pool = sourceFilter ? ranked.filter((s) => s.scraperSource === sourceFilter) : ranked;
+    if (pool.length === 0) throw new StreamNotFoundError();
 
-    const ranked = rankStreams(streams, lang);
-    await setStreamCache(cKey, ranked);
-
-    return { best: ranked[0], ranked };
+    return { best: pool[0], ranked: pool };
   }
 
   async invalidate(movieId: string): Promise<void> {
