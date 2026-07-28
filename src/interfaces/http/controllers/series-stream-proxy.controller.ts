@@ -2,28 +2,30 @@ import { Readable } from 'node:stream';
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import { deleteStreamCache } from '@/infrastructure/cache/stream-cache';
 import { makeGetBestSeriesStream } from '@/core/use-cases/factories/ranking.factories';
+import type { ScraperType } from '@/infrastructure/dfindexer/dfindexer.types';
 import { ResourceNotFoundError, StreamNotFoundError } from '@/shared/errors';
 
 const DMCA_SIZE = 2_119_075;
 const MIN_VIDEO_SIZE = 10_000_000;
 
 const TTL_MS = 4 * 60 * 60 * 1000;
-const streamUrlCache = new Map<string, { url: string; contentType: string; expiresAt: number }>();
+const streamUrlCache = new Map<string, { url: string; contentType: string; expiresAt: number; source?: string }>();
 
-function cacheKey(seriesId: string, season: number, episode: number, lang: 'pt' | 'en'): string {
-  return `${seriesId}:${season}:${episode}:${lang}`;
+function cacheKey(seriesId: string, season: number, episode: number, lang: 'pt' | 'en', source?: ScraperType): string {
+  return `${seriesId}:${season}:${episode}:${lang}:${source ?? 'any'}`;
 }
 
-function getCached(key: string): { url: string; contentType: string } | null {
+function getCached(key: string): { url: string; contentType: string; source?: string } | null {
   const entry = streamUrlCache.get(key);
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) { streamUrlCache.delete(key); return null; }
-  return { url: entry.url, contentType: entry.contentType };
+  return { url: entry.url, contentType: entry.contentType, source: entry.source };
 }
 
-function setCached(key: string, url: string, contentType: string): void {
-  streamUrlCache.set(key, { url, contentType, expiresAt: Date.now() + TTL_MS });
+function setCached(key: string, url: string, contentType: string, source?: string): void {
+  streamUrlCache.set(key, { url, contentType, expiresAt: Date.now() + TTL_MS, source });
 }
 
 function detectContentType(bytes: Uint8Array, fallback: string): string {
@@ -52,6 +54,7 @@ async function probeStream(url: string): Promise<{ finalUrl: string; contentType
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Range': 'bytes=0-11' },
       redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!res.ok) { await res.body?.cancel(); return null; }
@@ -84,35 +87,45 @@ async function openStream(url: string, rangeHeader?: string): Promise<Response |
   return res.ok ? res : null;
 }
 
-async function findBestStream(ranked: { url: string }[]): Promise<{ finalUrl: string; contentType: string } | null> {
-  const PARALLEL = 3;
+async function findBestStream(ranked: { url: string; scraperSource?: string }[]): Promise<{ finalUrl: string; contentType: string; stream: typeof ranked[0] } | null> {
+  const PARALLEL = 5;
   for (let i = 0; i < ranked.length; i += PARALLEL) {
     const batch = ranked.slice(i, i + PARALLEL);
-    const results = await Promise.allSettled(batch.map((s) => probeStream(s.url)));
-    for (const r of results) {
-      if (r.status === 'fulfilled' && r.value) return r.value;
-    }
+    const result = await new Promise<{ finalUrl: string; contentType: string; stream: typeof ranked[0] } | null>((resolve) => {
+      let remaining = batch.length;
+      batch.forEach((s) => {
+        probeStream(s.url).then((r) => {
+          if (r) resolve({ ...r, stream: s });
+          else if (--remaining === 0) resolve(null);
+        }).catch(() => { if (--remaining === 0) resolve(null); });
+      });
+    });
+    if (result) return result;
   }
   return null;
 }
 
 export const seriesStreamPrefetch = async (request: FastifyRequest, reply: FastifyReply) => {
   const { seriesId } = request.params as { seriesId: string };
-  const query = request.query as { season?: string; episode?: string; lang?: 'pt' | 'en' };
+  const query = request.query as { season?: string; episode?: string; lang?: 'pt' | 'en'; source?: ScraperType };
   const season = Number(query.season ?? 1);
   const episode = Number(query.episode ?? 1);
   const lang = query.lang ?? 'pt';
-  const key = cacheKey(seriesId, season, episode, lang);
+  const key = cacheKey(seriesId, season, episode, lang, query.source);
 
   try {
-    if (getCached(key)) return reply.send({ ready: true });
+    const existing = getCached(key);
+    if (existing) return reply.send({ ready: true, source: existing.source });
 
-    const { ranked } = await makeGetBestSeriesStream().execute(seriesId, season, episode, lang);
+    const { ranked } = await makeGetBestSeriesStream().execute(seriesId, season, episode, lang, query.source);
     const result = await findBestStream(ranked);
-    if (!result) return reply.status(503).send({ ready: false });
+    if (!result) {
+      await makeGetBestSeriesStream().invalidate(seriesId, season, episode);
+      return reply.status(503).send({ ready: false });
+    }
 
-    setCached(key, result.finalUrl, result.contentType);
-    return reply.send({ ready: true });
+    setCached(key, result.finalUrl, result.contentType, result.stream.scraperSource);
+    return reply.send({ ready: true, source: result.stream.scraperSource });
   } catch (err) {
     if (err instanceof StreamNotFoundError || err instanceof ResourceNotFoundError) {
       return reply.status(404).send({ ready: false });
@@ -123,24 +136,27 @@ export const seriesStreamPrefetch = async (request: FastifyRequest, reply: Fasti
 
 export const seriesStreamProxy = async (request: FastifyRequest, reply: FastifyReply) => {
   const { seriesId } = request.params as { seriesId: string };
-  const query = request.query as { season?: string; episode?: string; lang?: 'pt' | 'en' };
+  const query = request.query as { season?: string; episode?: string; lang?: 'pt' | 'en'; source?: ScraperType };
   const season = Number(query.season ?? 1);
   const episode = Number(query.episode ?? 1);
   const lang = query.lang ?? 'pt';
-  const key = cacheKey(seriesId, season, episode, lang);
+  const key = cacheKey(seriesId, season, episode, lang, query.source);
   const rangeHeader = request.headers.range;
+
+  console.log(`[series-proxy] series=${seriesId} s=${season} e=${episode} lang=${lang} source=${query.source ?? 'any'} range=${rangeHeader ?? 'none'} cacheHit=${!!getCached(key)}`);
 
   try {
     let cached = getCached(key);
 
     if (!cached) {
-      const { ranked } = await makeGetBestSeriesStream().execute(seriesId, season, episode, lang);
+      const { ranked } = await makeGetBestSeriesStream().execute(seriesId, season, episode, lang, query.source);
       const result = await findBestStream(ranked);
       if (result) {
-        setCached(key, result.finalUrl, result.contentType);
-        cached = { url: result.finalUrl, contentType: result.contentType };
-      }
-      if (!cached) {
+        console.log(`[series-stream] series=${seriesId} s=${season} e=${episode} url=${result.finalUrl.slice(0, 80)}`);
+        setCached(key, result.finalUrl, result.contentType, result.stream.scraperSource);
+        cached = { url: result.finalUrl, contentType: result.contentType, source: result.stream.scraperSource };
+      } else {
+        await makeGetBestSeriesStream().invalidate(seriesId, season, episode);
         return reply.status(503).send({ error: 'No working stream found for this episode.' });
       }
     }
@@ -149,11 +165,11 @@ export const seriesStreamProxy = async (request: FastifyRequest, reply: FastifyR
 
     if (!upstream) {
       streamUrlCache.delete(key);
-      const { ranked } = await makeGetBestSeriesStream().execute(seriesId, season, episode, lang);
+      const { ranked } = await makeGetBestSeriesStream().execute(seriesId, season, episode, lang, query.source);
       const result = await findBestStream(ranked);
       if (!result) return reply.status(503).send({ error: 'No working stream found for this episode.' });
-      setCached(key, result.finalUrl, result.contentType);
-      cached = { url: result.finalUrl, contentType: result.contentType };
+      setCached(key, result.finalUrl, result.contentType, result.stream.scraperSource);
+      cached = { url: result.finalUrl, contentType: result.contentType, source: result.stream.scraperSource };
       upstream = await openStream(cached.url, rangeHeader);
     }
 
@@ -172,6 +188,7 @@ export const seriesStreamProxy = async (request: FastifyRequest, reply: FastifyR
     reply.header('Accept-Ranges', acceptRanges ?? 'bytes');
     if (contentLength) reply.header('Content-Length', contentLength);
     if (contentRange) reply.header('Content-Range', contentRange);
+    reply.header('X-Stream-Source', cached.source ?? 'unknown');
 
     if (!upstream.body) {
       return reply.status(502).send({ error: 'No stream body from source' });

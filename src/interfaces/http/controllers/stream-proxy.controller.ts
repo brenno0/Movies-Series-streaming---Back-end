@@ -2,7 +2,9 @@ import { Readable } from 'node:stream';
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import { deleteStreamCache } from '@/infrastructure/cache/stream-cache';
 import { makeGetBestStream } from '@/core/use-cases/factories/ranking.factories';
+import type { ScraperType } from '@/infrastructure/dfindexer/dfindexer.types';
 import { ResourceNotFoundError, StreamNotFoundError } from '@/shared/errors';
 
 const DMCA_SIZE = 2_119_075; // RD's exact DMCA placeholder size in bytes
@@ -21,12 +23,13 @@ interface CacheEntry {
   codec?: string;
   language?: string;
   container?: string;
+  source?: string;
 }
 
 const streamUrlCache = new Map<string, CacheEntry>();
 
 // Deduplicates concurrent discovery for the same key — all waiters share one probe run.
-const inFlight = new Map<string, Promise<{ finalUrl: string; contentType: string; stream: { url: string; audio?: string; codec?: string; language?: string; container?: string } } | null>>();
+const inFlight = new Map<string, Promise<{ finalUrl: string; contentType: string; stream: { url: string; audio?: string; codec?: string; language?: string; container?: string; scraperSource?: string } } | null>>();
 
 function getCached(movieId: string): CacheEntry | null {
   const entry = streamUrlCache.get(movieId);
@@ -35,7 +38,7 @@ function getCached(movieId: string): CacheEntry | null {
   return entry;
 }
 
-function setCached(movieId: string, url: string, contentType: string, meta?: { audio?: string; codec?: string; language?: string; container?: string }): void {
+function setCached(movieId: string, url: string, contentType: string, meta?: { audio?: string; codec?: string; language?: string; container?: string; source?: string }): void {
   streamUrlCache.set(movieId, { url, contentType, expiresAt: Date.now() + TTL_MS, ...meta });
 }
 
@@ -70,6 +73,7 @@ async function probeStream(url: string): Promise<{ finalUrl: string; contentType
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Range': 'bytes=0-11' },
       redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!res.ok) { await res.body?.cancel(); return null; }
@@ -104,53 +108,66 @@ async function openStream(url: string, rangeHeader?: string): Promise<Response |
   return res.ok ? res : null;
 }
 
-// Probe top N streams in parallel; return first success.
-async function findBestStream(ranked: { url: string; audio?: string; codec?: string; language?: string; container?: string }[]): Promise<{ finalUrl: string; contentType: string; stream: typeof ranked[0] } | null> {
-  const PARALLEL = 3;
+// Probe top N streams in parallel; return first success without waiting for slow/failing probes.
+async function findBestStream(ranked: { url: string; audio?: string; codec?: string; language?: string; container?: string; scraperSource?: string }[]): Promise<{ finalUrl: string; contentType: string; stream: typeof ranked[0] } | null> {
+  const PARALLEL = 5;
   for (let i = 0; i < ranked.length; i += PARALLEL) {
     const batch = ranked.slice(i, i + PARALLEL);
-    const results = await Promise.allSettled(batch.map((s) => probeStream(s.url)));
-    for (let j = 0; j < results.length; j++) {
-      const r = results[j];
-      if (r.status === 'fulfilled' && r.value) return { ...r.value, stream: batch[j] };
-    }
+    const result = await new Promise<{ finalUrl: string; contentType: string; stream: typeof ranked[0] } | null>((resolve) => {
+      let remaining = batch.length;
+      batch.forEach((s, j) => {
+        probeStream(s.url).then((probeResult) => {
+          if (probeResult) resolve({ ...probeResult, stream: s });
+          else if (--remaining === 0) resolve(null);
+        }).catch(() => { if (--remaining === 0) resolve(null); });
+      });
+    });
+    if (result) return result;
   }
   return null;
 }
 
-async function discoverAndCache(movieId: string, lang: 'pt' | 'en'): Promise<{ finalUrl: string; contentType: string; stream: { url: string; audio?: string; codec?: string; language?: string; container?: string } } | null> {
-  const cKey = `${movieId}:${lang}`;
-  const existing = inFlight.get(cKey);
+function discoverKey(movieId: string, lang: 'pt' | 'en', source?: ScraperType): string {
+  return `${movieId}:${lang}:${source ?? 'any'}`;
+}
+
+async function discoverAndCache(movieId: string, lang: 'pt' | 'en', source?: ScraperType): Promise<{ finalUrl: string; contentType: string; stream: { url: string; audio?: string; codec?: string; language?: string; container?: string; scraperSource?: string } } | null> {
+  const key = discoverKey(movieId, lang, source);
+  const existing = inFlight.get(key);
   if (existing) return existing;
 
   const promise = (async () => {
     try {
-      const { ranked } = await makeGetBestStream().execute(movieId, lang);
+      const { ranked } = await makeGetBestStream().execute(movieId, lang, source);
       const result = await findBestStream(ranked);
       if (result) {
-        const meta = { audio: result.stream.audio, codec: result.stream.codec, language: result.stream.language, container: result.stream.container };
-        setCached(cKey, result.finalUrl, result.contentType, meta);
+        const meta = { audio: result.stream.audio, codec: result.stream.codec, language: result.stream.language, container: result.stream.container, source: result.stream.scraperSource };
+        setCached(key, result.finalUrl, result.contentType, meta);
+      } else {
+        // All probes failed (DMCA/expired links) — bust Redis cache so next request fetches fresh
+        await deleteStreamCache(`${movieId}:${lang}`);
       }
       return result;
     } finally {
-      inFlight.delete(cKey);
+      inFlight.delete(key);
     }
   })();
 
-  inFlight.set(cKey, promise);
+  inFlight.set(key, promise);
   return promise;
 }
 
 export const streamPrefetch = async (request: FastifyRequest, reply: FastifyReply) => {
   const { movieId } = request.params as { movieId: string };
-  const { lang = 'pt' } = request.query as { lang?: 'pt' | 'en' };
-  const cKey = `${movieId}:${lang}`;
+  const { lang = 'pt', source } = request.query as { lang?: 'pt' | 'en'; source?: ScraperType };
+  const key = discoverKey(movieId, lang, source);
   try {
-    if (getCached(cKey)) return reply.send({ ready: true });
-    const result = await discoverAndCache(movieId, lang);
+    const existing = getCached(key);
+    if (existing) return reply.send({ ready: true, source: existing.source });
+    const result = await discoverAndCache(movieId, lang, source);
     if (!result) return reply.status(503).send({ ready: false });
-    console.log(`[prefetch] movie=${movieId} lang=${lang} audio=${result.stream.audio} codec=${result.stream.codec} container=${result.stream.container}`);
-    return reply.send({ ready: true });
+    console.log(`[prefetch] movie=${movieId} lang=${lang} source=${result.stream.scraperSource} audio=${result.stream.audio} codec=${result.stream.codec} container=${result.stream.container}`);
+    return reply.send({ ready: true, source: result.stream.scraperSource });
   } catch (err) {
     if (err instanceof StreamNotFoundError || err instanceof ResourceNotFoundError) {
       return reply.status(404).send({ ready: false });
@@ -161,30 +178,30 @@ export const streamPrefetch = async (request: FastifyRequest, reply: FastifyRepl
 
 export const streamProxy = async (request: FastifyRequest, reply: FastifyReply) => {
   const { movieId } = request.params as { movieId: string };
-  const { lang = 'pt' } = request.query as { lang?: 'pt' | 'en' };
-  const cKey = `${movieId}:${lang}`;
+  const { lang = 'pt', source } = request.query as { lang?: 'pt' | 'en'; source?: ScraperType };
+  const key = discoverKey(movieId, lang, source);
   const rangeHeader = request.headers.range;
 
   try {
-    let cached = getCached(cKey);
-    console.log(`[proxy] movie=${movieId} lang=${lang} range=${rangeHeader ?? 'none'} cacheHit=${!!cached}`);
+    let cached = getCached(key);
+    console.log(`[proxy] movie=${movieId} lang=${lang} source=${source ?? 'any'} range=${rangeHeader ?? 'none'} cacheHit=${!!cached}`);
 
     if (!cached) {
-      const result = await discoverAndCache(movieId, lang);
+      const result = await discoverAndCache(movieId, lang, source);
       if (!result) return reply.status(503).send({ error: 'No working stream found for this movie.' });
       console.log(`[stream] movie=${movieId} lang=${lang} audio=${result.stream.audio} codec=${result.stream.codec} container=${result.stream.container} url=${result.finalUrl.slice(0, 80)}`);
-      cached = getCached(cKey)!;
+      cached = getCached(key)!;
     }
 
     let upstream = await openStream(cached.url, rangeHeader);
 
     // Cached RD URL expired — re-probe and get fresh resolved URL
     if (!upstream) {
-      streamUrlCache.delete(cKey);
-      const result = await discoverAndCache(movieId, lang);
+      streamUrlCache.delete(key);
+      const result = await discoverAndCache(movieId, lang, source);
       if (!result) return reply.status(503).send({ error: 'No working stream found for this movie.' });
       console.log(`[stream:refresh] movie=${movieId} lang=${lang} url=${result.finalUrl.slice(0, 80)}`);
-      cached = getCached(cKey)!;
+      cached = getCached(key)!;
       upstream = await openStream(cached.url, rangeHeader);
     }
 
@@ -208,6 +225,7 @@ export const streamProxy = async (request: FastifyRequest, reply: FastifyReply) 
     reply.header('X-Stream-Codec', cached.codec ?? 'unknown');
     reply.header('X-Stream-Language', cached.language ?? 'unknown');
     reply.header('X-Stream-Container', cached.container ?? 'unknown');
+    reply.header('X-Stream-Source', cached.source ?? 'unknown');
 
     if (!upstream.body) {
       return reply.status(502).send({ error: 'No stream body from source' });
