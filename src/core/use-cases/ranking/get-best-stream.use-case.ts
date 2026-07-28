@@ -2,7 +2,7 @@ import type { StreamEntity } from '@/core/entities/stream.entity';
 import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
 import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
 import type { ScraperType } from '@/infrastructure/dfindexer/dfindexer.types';
-import type { RealDebridClient } from '@/infrastructure/real-debrid/real-debrid.client';
+import type { DebridResolver } from '@/infrastructure/debrid/debrid-resolver';
 import { deleteStreamCache, getStreamCache, setStreamCache } from '@/infrastructure/cache/stream-cache';
 import { StreamNotFoundError } from '@/shared/errors';
 
@@ -14,10 +14,10 @@ export class GetBestStreamUseCase {
 
   constructor(
     dfindexerClient: DfindexerClient,
-    realDebridClient: RealDebridClient,
+    debridResolver: DebridResolver,
     private readonly moviesRepository: MoviesRepository,
   ) {
-    this.aggregator = new AggregateStreamsUseCase(dfindexerClient, realDebridClient, moviesRepository);
+    this.aggregator = new AggregateStreamsUseCase(dfindexerClient, debridResolver, moviesRepository);
   }
 
   async execute(movieId: string, lang: 'pt' | 'en' = 'pt', sourceFilter?: ScraperType): Promise<{ best: StreamEntity; ranked: StreamEntity[] }> {

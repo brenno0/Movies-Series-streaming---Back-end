@@ -1,7 +1,7 @@
 import type { StreamEntity } from '@/core/entities/stream.entity';
 import type { SeriesRepository } from '@/infrastructure/database/repositories/series.repository';
 import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
-import type { RealDebridClient } from '@/infrastructure/real-debrid/real-debrid.client';
+import type { DebridResolver } from '@/infrastructure/debrid/debrid-resolver';
 import { ResourceNotFoundError } from '@/shared/errors';
 
 import { buildEpisodeQuery } from './build-dfindexer-query';
@@ -13,7 +13,7 @@ const TOP_N_TO_RESOLVE = 20;
 export class AggregateSeriesStreamsUseCase {
   constructor(
     private readonly dfindexerClient: DfindexerClient,
-    private readonly realDebridClient: RealDebridClient,
+    private readonly debridResolver: DebridResolver,
     private readonly seriesRepository: SeriesRepository,
   ) {}
 
@@ -27,7 +27,7 @@ export class AggregateSeriesStreamsUseCase {
     const ranked = rankCandidates(compatible, preferLang, series.imdbId ?? undefined).slice(0, TOP_N_TO_RESOLVE);
 
     const resolved = await Promise.allSettled(
-      ranked.map((c) => this.realDebridClient.resolveMagnetToUrl(c.magnet_link, c.info_hash, { season, episode })),
+      ranked.map((c) => this.debridResolver.resolveMagnetToUrl(c.magnet_link, c.info_hash, { season, episode })),
     );
 
     const streams: StreamEntity[] = [];

@@ -1,7 +1,7 @@
 import type { PlaybackSessionRepository } from '@/infrastructure/database/repositories/playback-session.repository';
 import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
 import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
-import type { RealDebridClient } from '@/infrastructure/real-debrid/real-debrid.client';
+import type { DebridResolver } from '@/infrastructure/debrid/debrid-resolver';
 import { GetBestStreamUseCase } from '../ranking/get-best-stream.use-case';
 
 interface StartPlaybackRequest {
@@ -22,10 +22,10 @@ export class StartPlaybackUseCase {
   constructor(
     private readonly playbackSessionRepository: PlaybackSessionRepository,
     dfindexerClient: DfindexerClient,
-    realDebridClient: RealDebridClient,
+    debridResolver: DebridResolver,
     moviesRepository: MoviesRepository,
   ) {
-    this.getBestStream = new GetBestStreamUseCase(dfindexerClient, realDebridClient, moviesRepository);
+    this.getBestStream = new GetBestStreamUseCase(dfindexerClient, debridResolver, moviesRepository);
   }
 
   async execute({ userId, movieId }: StartPlaybackRequest): Promise<StartPlaybackResponse> {

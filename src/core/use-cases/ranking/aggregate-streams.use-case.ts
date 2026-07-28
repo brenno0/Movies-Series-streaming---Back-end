@@ -1,7 +1,7 @@
 import type { StreamEntity } from '@/core/entities/stream.entity';
 import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
 import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
-import type { RealDebridClient } from '@/infrastructure/real-debrid/real-debrid.client';
+import type { DebridResolver } from '@/infrastructure/debrid/debrid-resolver';
 import { ResourceNotFoundError } from '@/shared/errors';
 
 import { buildMovieQuery } from './build-dfindexer-query';
@@ -13,7 +13,7 @@ const TOP_N_TO_RESOLVE = 20;
 export class AggregateStreamsUseCase {
   constructor(
     private readonly dfindexerClient: DfindexerClient,
-    private readonly realDebridClient: RealDebridClient,
+    private readonly debridResolver: DebridResolver,
     private readonly moviesRepository: MoviesRepository,
   ) {}
 
@@ -28,7 +28,7 @@ export class AggregateStreamsUseCase {
     console.log(`[aggregate] movie=${movieId} query="${query}" raw=${rawCandidates.length} compatible=${compatible.length} ranked=${ranked.length}`);
 
     const resolved = await Promise.allSettled(
-      ranked.map((c) => this.realDebridClient.resolveMagnetToUrl(c.magnet_link, c.info_hash)),
+      ranked.map((c) => this.debridResolver.resolveMagnetToUrl(c.magnet_link, c.info_hash)),
     );
 
     const streams: StreamEntity[] = [];

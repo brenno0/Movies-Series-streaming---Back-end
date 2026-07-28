@@ -4,13 +4,13 @@ import { PlaybackSessionPrismaRepository } from '@/infrastructure/database/repos
 import { EndPlaybackUseCase } from '../streaming/end-playback.use-case';
 import { StartPlaybackUseCase } from '../streaming/start-playback.use-case';
 import { UpdateProgressUseCase } from '../streaming/update-progress.use-case';
-import { makeDfindexerClient, makeRealDebridClient } from './ranking.factories';
+import { makeDebridResolver, makeDfindexerClient } from './ranking.factories';
 
 export function makeStartPlayback() {
   return new StartPlaybackUseCase(
     new PlaybackSessionPrismaRepository(),
     makeDfindexerClient(),
-    makeRealDebridClient(),
+    makeDebridResolver(),
     new MoviesPrismaRepository(),
   );
 }

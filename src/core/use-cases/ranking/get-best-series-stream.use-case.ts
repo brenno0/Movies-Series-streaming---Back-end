@@ -2,7 +2,7 @@ import type { StreamEntity } from '@/core/entities/stream.entity';
 import type { SeriesRepository } from '@/infrastructure/database/repositories/series.repository';
 import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
 import type { ScraperType } from '@/infrastructure/dfindexer/dfindexer.types';
-import type { RealDebridClient } from '@/infrastructure/real-debrid/real-debrid.client';
+import type { DebridResolver } from '@/infrastructure/debrid/debrid-resolver';
 import { deleteStreamCache, getStreamCache, setStreamCache } from '@/infrastructure/cache/stream-cache';
 import { StreamNotFoundError } from '@/shared/errors';
 
@@ -14,10 +14,10 @@ export class GetBestSeriesStreamUseCase {
 
   constructor(
     dfindexerClient: DfindexerClient,
-    realDebridClient: RealDebridClient,
+    debridResolver: DebridResolver,
     private readonly seriesRepository: SeriesRepository,
   ) {
-    this.aggregator = new AggregateSeriesStreamsUseCase(dfindexerClient, realDebridClient, seriesRepository);
+    this.aggregator = new AggregateSeriesStreamsUseCase(dfindexerClient, debridResolver, seriesRepository);
   }
 
   private cacheKey(seriesId: string, season: number, episode: number, lang: 'pt' | 'en'): string {
