@@ -1,13 +1,17 @@
-// Implemented against TorBox's public API docs (https://api.torbox.app) — not yet
-// exercised against a live account/key. Endpoint paths and response shapes here
-// may need small adjustments once tested for real; the resolve flow (create torrent
-// -> poll -> request direct link) mirrors RealDebridClient's proven shape.
+// Verified live against the TorBox API (endpoint paths, form fields, and response
+// shapes below all match what the real API returns — checked 2026-07-28).
+//
+// TorBox's cache is much smaller than Real-Debrid's: an uncached magnet can sit in
+// "metaDL" (still resolving metadata, before any actual download progress) for way
+// longer than RD's equivalent wait. Polling budget here is intentionally short —
+// if TorBox hasn't produced a cached/finished torrent quickly, DebridResolver falls
+// back to Real-Debrid rather than blocking the request on a slow cold TorBox fetch.
 import { redis } from '@/infrastructure/cache/redis';
 
 import type { TorBoxCreateTorrentResponse, TorBoxFile, TorBoxMyListResponse, TorBoxRequestDlResponse, TorBoxTorrentInfo } from './torbox.types';
 
 const API_BASE = 'https://api.torbox.app/v1/api';
-const POLL_ATTEMPTS = 6;
+const POLL_ATTEMPTS = 4;
 const POLL_INTERVAL_MS = 3000;
 const LINK_CACHE_TTL_SECONDS = 4 * 60 * 60;
 const VIDEO_EXTENSIONS = ['.mkv', '.mp4', '.avi'];
