@@ -23,7 +23,7 @@ export const app = fastify().withTypeProvider<ZodTypeProvider>();
 app.register(cors, {
   origin: true,
   allowedHeaders: ['Content-Type', 'Authorization', 'Range'],
-  exposedHeaders: ['Content-Range', 'Content-Length', 'Accept-Ranges', 'X-Stream-Audio', 'X-Stream-Codec', 'X-Stream-Language', 'X-Stream-Container'],
+  exposedHeaders: ['Content-Range', 'Content-Length', 'Accept-Ranges', 'X-Stream-Audio', 'X-Stream-Codec', 'X-Stream-Language', 'X-Stream-Container', 'X-Stream-Source', 'X-Stream-Mode', 'X-Stream-Duration'],
   credentials: true,
 });
 

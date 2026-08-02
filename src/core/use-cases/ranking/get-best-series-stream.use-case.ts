@@ -1,9 +1,11 @@
 import type { StreamEntity } from '@/core/entities/stream.entity';
 import type { SeriesRepository } from '@/infrastructure/database/repositories/series.repository';
+import type { BetorClient } from '@/infrastructure/betor/betor.client';
 import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
 import type { ScraperType } from '@/infrastructure/dfindexer/dfindexer.types';
 import type { DebridResolver } from '@/infrastructure/debrid/debrid-resolver';
 import { deleteStreamCache, getStreamCache, setStreamCache } from '@/infrastructure/cache/stream-cache';
+import type { TmdbClient } from '@/infrastructure/tmdb/tmdb.client';
 import { StreamNotFoundError } from '@/shared/errors';
 
 import { AggregateSeriesStreamsUseCase } from './aggregate-series-streams.use-case';
@@ -16,8 +18,10 @@ export class GetBestSeriesStreamUseCase {
     dfindexerClient: DfindexerClient,
     debridResolver: DebridResolver,
     private readonly seriesRepository: SeriesRepository,
+    betorClient: BetorClient,
+    tmdbClient: TmdbClient | null,
   ) {
-    this.aggregator = new AggregateSeriesStreamsUseCase(dfindexerClient, debridResolver, seriesRepository);
+    this.aggregator = new AggregateSeriesStreamsUseCase(dfindexerClient, debridResolver, seriesRepository, betorClient, tmdbClient);
   }
 
   private cacheKey(seriesId: string, season: number, episode: number, lang: 'pt' | 'en'): string {

@@ -6,6 +6,7 @@ import { deleteStreamCache } from '@/infrastructure/cache/stream-cache';
 import { makeGetBestStream } from '@/core/use-cases/factories/ranking.factories';
 import type { ScraperType } from '@/infrastructure/dfindexer/dfindexer.types';
 import { ResourceNotFoundError, StreamNotFoundError } from '@/shared/errors';
+import { probeCodecs, planRemux, startFfmpegPipeline, tryAcquireFfmpegSlot, releaseFfmpegSlot, type RemuxPlan } from '@/infrastructure/ffmpeg/ffmpeg-stream';
 
 const DMCA_SIZE = 2_119_075; // RD's exact DMCA placeholder size in bytes
 const MIN_VIDEO_SIZE = 10_000_000; // 10 MB minimum for a real video file
@@ -24,6 +25,8 @@ interface CacheEntry {
   language?: string;
   container?: string;
   source?: string;
+  remuxPlan: RemuxPlan | null; // null = passthrough, already browser-compatible mp4/h264/aac
+  durationSeconds: number | null;
 }
 
 const streamUrlCache = new Map<string, CacheEntry>();
@@ -38,8 +41,21 @@ function getCached(movieId: string): CacheEntry | null {
   return entry;
 }
 
-function setCached(movieId: string, url: string, contentType: string, meta?: { audio?: string; codec?: string; language?: string; container?: string; source?: string }): void {
-  streamUrlCache.set(movieId, { url, contentType, expiresAt: Date.now() + TTL_MS, ...meta });
+function setCached(movieId: string, url: string, contentType: string, remuxPlan: RemuxPlan | null, durationSeconds: number | null, meta?: { audio?: string; codec?: string; language?: string; container?: string; source?: string }): void {
+  streamUrlCache.set(movieId, { url, contentType, expiresAt: Date.now() + TTL_MS, remuxPlan, durationSeconds, ...meta });
+}
+
+// mp4 container + h264 video + aac audio is natively playable — no ffmpeg needed.
+// Anything else (wrong container and/or incompatible codec) needs a remux or transcode pass.
+async function resolveRemuxPlan(url: string, contentType: string): Promise<{ remuxPlan: RemuxPlan | null; durationSeconds: number | null }> {
+  const codecs = await probeCodecs(url);
+  if (!codecs) {
+    // Probe failed — best effort: only risk passthrough if we already detected mp4 by byte-sniffing.
+    return { remuxPlan: contentType === 'video/mp4' ? null : { copyVideo: false, copyAudio: false }, durationSeconds: null };
+  }
+  const plan = planRemux(codecs);
+  const remuxPlan = (contentType === 'video/mp4' && plan.copyVideo && plan.copyAudio) ? null : plan;
+  return { remuxPlan, durationSeconds: codecs.durationSeconds };
 }
 
 function detectContentType(bytes: Uint8Array, fallback: string): string {
@@ -142,7 +158,8 @@ async function discoverAndCache(movieId: string, lang: 'pt' | 'en', source?: Scr
       const result = await findBestStream(ranked);
       if (result) {
         const meta = { audio: result.stream.audio, codec: result.stream.codec, language: result.stream.language, container: result.stream.container, source: result.stream.scraperSource };
-        setCached(key, result.finalUrl, result.contentType, meta);
+        const { remuxPlan, durationSeconds } = await resolveRemuxPlan(result.finalUrl, result.contentType);
+        setCached(key, result.finalUrl, result.contentType, remuxPlan, durationSeconds, meta);
       } else {
         // All probes failed (DMCA/expired links) — bust Redis cache so next request fetches fresh
         await deleteStreamCache(`${movieId}:${lang}`);
@@ -163,11 +180,12 @@ export const streamPrefetch = async (request: FastifyRequest, reply: FastifyRepl
   const key = discoverKey(movieId, lang, source);
   try {
     const existing = getCached(key);
-    if (existing) return reply.send({ ready: true, source: existing.source });
+    if (existing) return reply.send({ ready: true, source: existing.source, durationSeconds: existing.durationSeconds });
     const result = await discoverAndCache(movieId, lang, source);
     if (!result) return reply.status(503).send({ ready: false });
     console.log(`[prefetch] movie=${movieId} lang=${lang} source=${result.stream.scraperSource} audio=${result.stream.audio} codec=${result.stream.codec} container=${result.stream.container}`);
-    return reply.send({ ready: true, source: result.stream.scraperSource });
+    const cachedAfter = getCached(key);
+    return reply.send({ ready: true, source: result.stream.scraperSource, durationSeconds: cachedAfter?.durationSeconds ?? null });
   } catch (err) {
     if (err instanceof StreamNotFoundError || err instanceof ResourceNotFoundError) {
       return reply.status(404).send({ ready: false });
@@ -178,7 +196,7 @@ export const streamPrefetch = async (request: FastifyRequest, reply: FastifyRepl
 
 export const streamProxy = async (request: FastifyRequest, reply: FastifyReply) => {
   const { movieId } = request.params as { movieId: string };
-  const { lang = 'pt', source } = request.query as { lang?: 'pt' | 'en'; source?: ScraperType };
+  const { lang = 'pt', source, seekTo } = request.query as { lang?: 'pt' | 'en'; source?: ScraperType; seekTo?: string };
   const key = discoverKey(movieId, lang, source);
   const rangeHeader = request.headers.range;
 
@@ -191,6 +209,36 @@ export const streamProxy = async (request: FastifyRequest, reply: FastifyReply) 
       if (!result) return reply.status(503).send({ error: 'No working stream found for this movie.' });
       console.log(`[stream] movie=${movieId} lang=${lang} audio=${result.stream.audio} codec=${result.stream.codec} container=${result.stream.container} url=${result.finalUrl.slice(0, 80)}`);
       cached = getCached(key)!;
+    }
+
+    if (cached.remuxPlan) {
+      if (!tryAcquireFfmpegSlot()) {
+        return reply.status(503).send({ error: 'Server busy transcoding another stream, try again shortly.' });
+      }
+      console.log(`[ffmpeg] movie=${movieId} lang=${lang} copyVideo=${cached.remuxPlan.copyVideo} copyAudio=${cached.remuxPlan.copyAudio} seekTo=${seekTo ?? 0}`);
+
+      const seekSeconds = Number(seekTo ?? 0) || 0;
+      const session = startFfmpegPipeline(cached.url, cached.remuxPlan, seekSeconds);
+
+      let released = false;
+      const release = () => { if (!released) { released = true; releaseFfmpegSlot(); } };
+      session.stream.once('close', release);
+      session.stream.once('error', release);
+      request.socket.once('close', () => { session.kill(); release(); });
+
+      reply.code(200).type('video/mp4');
+      // No Content-Length (live pipe) and range requests aren't honored on this branch —
+      // seeking is done via the seekTo query param restarting ffmpeg, not HTTP Range. An
+      // explicit "none" stops the browser probing for range support it won't get.
+      reply.header('Accept-Ranges', 'none');
+      reply.header('X-Stream-Audio', cached.audio ?? 'unknown');
+      reply.header('X-Stream-Codec', cached.codec ?? 'unknown');
+      reply.header('X-Stream-Language', cached.language ?? 'unknown');
+      reply.header('X-Stream-Container', cached.container ?? 'unknown');
+      reply.header('X-Stream-Source', cached.source ?? 'unknown');
+      reply.header('X-Stream-Mode', cached.remuxPlan.copyVideo && cached.remuxPlan.copyAudio ? 'remux' : 'transcode');
+      if (cached.durationSeconds) reply.header('X-Stream-Duration', String(cached.durationSeconds));
+      return reply.send(session.stream);
     }
 
     let upstream = await openStream(cached.url, rangeHeader);

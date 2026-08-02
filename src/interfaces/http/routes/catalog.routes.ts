@@ -60,7 +60,18 @@ export const catalogRoutes = async (app: FastifyTypedInstance) => {
         orderDirection: z.enum(['asc', 'desc']).optional(),
         title: z.string().optional(),
       }),
-      response: { 200: z.array(z.object({ id: z.string(), title: z.string(), tmdbId: z.number(), createdAt: z.date() })) },
+      response: {
+        200: z.array(z.object({
+          id: z.string(),
+          tmdbId: z.number(),
+          title: z.string(),
+          overview: z.string(),
+          posterPath: z.string(),
+          voteAverage: z.number(),
+          createdAt: z.date(),
+          updatedAt: z.date(),
+        })),
+      },
     },
   }, getAllWatchlists);
 
@@ -70,7 +81,16 @@ export const catalogRoutes = async (app: FastifyTypedInstance) => {
       operationId: 'createWatchlist',
       body: z.object({ movieId: z.string() }),
       response: {
-        201: z.object({ id: z.string(), title: z.string(), tmdbId: z.number() }),
+        201: z.object({
+          id: z.string(),
+          tmdbId: z.number(),
+          title: z.string(),
+          overview: z.string(),
+          posterPath: z.string(),
+          voteAverage: z.number(),
+          createdAt: z.date(),
+          updatedAt: z.date(),
+        }),
         404: z.object({ error: z.string(), message: z.string() }),
         409: z.object({ error: z.string(), message: z.string() }),
       },

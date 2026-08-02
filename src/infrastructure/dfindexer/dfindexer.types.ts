@@ -1,4 +1,4 @@
-export type ScraperType = 'starck' | 'rede' | 'tfilme' | 'comand' | 'bludv';
+export type ScraperType = 'starck' | 'rede' | 'tfilme' | 'comand' | 'bludv' | 'betor';
 
 export interface DfindexerResult {
   title: string;

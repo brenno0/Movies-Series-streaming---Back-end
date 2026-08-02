@@ -1,5 +1,6 @@
-import type { Prisma, Watchlist } from 'generated/prisma';
+import { Prisma, type Watchlist } from 'generated/prisma';
 
+import { ResourceNotFoundError } from '@/shared/errors';
 import { prisma } from '../prisma';
 
 export interface WatchlistRepository {
@@ -21,7 +22,14 @@ export interface WatchlistRepository {
 
 export class WatchlistPrismaRepository implements WatchlistRepository {
   async create(data: Prisma.WatchlistUncheckedCreateInput): Promise<Watchlist> {
-    return prisma.watchlist.create({ data });
+    try {
+      return await prisma.watchlist.create({ data });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+        throw new ResourceNotFoundError({ resource: 'User' });
+      }
+      throw err;
+    }
   }
 
   async deleteById(id: string): Promise<void> {
@@ -41,7 +49,7 @@ export class WatchlistPrismaRepository implements WatchlistRepository {
     filter,
     orderBy,
     page = 1,
-    limit = 10,
+    limit,
   }: {
     userId: string;
     filter?: { title?: string };
@@ -65,8 +73,10 @@ export class WatchlistPrismaRepository implements WatchlistRepository {
           ? { movie: { title: orderBy.direction } }
           : { [orderBy.field]: orderBy.direction }
         : { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
+      ...(limit !== undefined && {
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
     });
   }
 }

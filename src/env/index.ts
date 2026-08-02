@@ -10,6 +10,7 @@ const envSchema = z.object({
   REAL_DEBRID_TOKEN: z.string(),
   TORBOX_API_KEY: z.string().optional(),
   DFINDEXER_URL: z.string().default('http://host.docker.internal:7006'),
+  TMDB_ACCESS_TOKEN: z.string().optional(),
 });
 
 const _env = envSchema.safeParse(process.env);

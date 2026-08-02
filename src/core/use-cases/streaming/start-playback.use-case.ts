@@ -1,7 +1,9 @@
 import type { PlaybackSessionRepository } from '@/infrastructure/database/repositories/playback-session.repository';
 import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
+import type { BetorClient } from '@/infrastructure/betor/betor.client';
 import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
 import type { DebridResolver } from '@/infrastructure/debrid/debrid-resolver';
+import type { TmdbClient } from '@/infrastructure/tmdb/tmdb.client';
 import { GetBestStreamUseCase } from '../ranking/get-best-stream.use-case';
 
 interface StartPlaybackRequest {
@@ -24,8 +26,10 @@ export class StartPlaybackUseCase {
     dfindexerClient: DfindexerClient,
     debridResolver: DebridResolver,
     moviesRepository: MoviesRepository,
+    betorClient: BetorClient,
+    tmdbClient: TmdbClient | null,
   ) {
-    this.getBestStream = new GetBestStreamUseCase(dfindexerClient, debridResolver, moviesRepository);
+    this.getBestStream = new GetBestStreamUseCase(dfindexerClient, debridResolver, moviesRepository, betorClient, tmdbClient);
   }
 
   async execute({ userId, movieId }: StartPlaybackRequest): Promise<StartPlaybackResponse> {

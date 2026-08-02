@@ -16,6 +16,8 @@ RUN npx prisma generate
 
 FROM node:24.10.0-alpine AS start
 
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /usr/src/nbflix-backend
 
 COPY --from=build /usr/src/nbflix-backend/dist ./dist

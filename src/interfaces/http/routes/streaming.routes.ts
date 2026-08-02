@@ -7,7 +7,7 @@ import { seriesStreamProxy, seriesStreamPrefetch } from '../controllers/series-s
 import { getSubtitles } from '../controllers/subtitles.controller';
 import { verifyJWT } from '../middlewares/verifyJWT';
 
-const scraperSourceSchema = z.enum(['starck', 'rede', 'tfilme', 'comand', 'bludv']);
+const scraperSourceSchema = z.enum(['starck', 'rede', 'tfilme', 'comand', 'bludv', 'betor']);
 
 export const streamingRoutes = async (app: FastifyTypedInstance) => {
   app.post('/stream/start', {
@@ -42,7 +42,7 @@ export const streamingRoutes = async (app: FastifyTypedInstance) => {
       operationId: 'streamPrefetch',
       params: z.object({ movieId: z.string() }),
       querystring: z.object({ lang: z.enum(['pt', 'en']).optional(), source: scraperSourceSchema.optional() }),
-      response: { 200: z.object({ ready: z.boolean(), source: z.string().optional() }) },
+      response: { 200: z.object({ ready: z.boolean(), source: z.string().optional(), durationSeconds: z.number().nullable().optional() }) },
     },
   }, streamPrefetch);
 
@@ -51,7 +51,7 @@ export const streamingRoutes = async (app: FastifyTypedInstance) => {
     schema: {
       operationId: 'streamProxy',
       params: z.object({ movieId: z.string() }),
-      querystring: z.object({ lang: z.enum(['pt', 'en']).optional(), source: scraperSourceSchema.optional() }),
+      querystring: z.object({ lang: z.enum(['pt', 'en']).optional(), source: scraperSourceSchema.optional(), seekTo: z.string().optional() }),
     },
   }, streamProxy);
 
@@ -61,7 +61,7 @@ export const streamingRoutes = async (app: FastifyTypedInstance) => {
       operationId: 'seriesStreamPrefetch',
       params: z.object({ seriesId: z.string() }),
       querystring: z.object({ season: z.string().optional(), episode: z.string().optional(), lang: z.enum(['pt', 'en']).optional(), source: scraperSourceSchema.optional() }),
-      response: { 200: z.object({ ready: z.boolean(), source: z.string().optional() }) },
+      response: { 200: z.object({ ready: z.boolean(), source: z.string().optional(), durationSeconds: z.number().nullable().optional() }) },
     },
   }, seriesStreamPrefetch);
 
@@ -70,7 +70,7 @@ export const streamingRoutes = async (app: FastifyTypedInstance) => {
     schema: {
       operationId: 'seriesStreamProxy',
       params: z.object({ seriesId: z.string() }),
-      querystring: z.object({ season: z.string().optional(), episode: z.string().optional(), lang: z.enum(['pt', 'en']).optional(), source: scraperSourceSchema.optional() }),
+      querystring: z.object({ season: z.string().optional(), episode: z.string().optional(), lang: z.enum(['pt', 'en']).optional(), source: scraperSourceSchema.optional(), seekTo: z.string().optional() }),
     },
   }, seriesStreamProxy);
 

@@ -1,9 +1,11 @@
 import type { StreamEntity } from '@/core/entities/stream.entity';
 import type { MoviesRepository } from '@/infrastructure/database/repositories/movies.repository';
+import type { BetorClient } from '@/infrastructure/betor/betor.client';
 import type { DfindexerClient } from '@/infrastructure/dfindexer/dfindexer.client';
 import type { ScraperType } from '@/infrastructure/dfindexer/dfindexer.types';
 import type { DebridResolver } from '@/infrastructure/debrid/debrid-resolver';
 import { deleteStreamCache, getStreamCache, setStreamCache } from '@/infrastructure/cache/stream-cache';
+import type { TmdbClient } from '@/infrastructure/tmdb/tmdb.client';
 import { StreamNotFoundError } from '@/shared/errors';
 
 import { AggregateStreamsUseCase } from './aggregate-streams.use-case';
@@ -16,8 +18,10 @@ export class GetBestStreamUseCase {
     dfindexerClient: DfindexerClient,
     debridResolver: DebridResolver,
     private readonly moviesRepository: MoviesRepository,
+    betorClient: BetorClient,
+    tmdbClient: TmdbClient | null,
   ) {
-    this.aggregator = new AggregateStreamsUseCase(dfindexerClient, debridResolver, moviesRepository);
+    this.aggregator = new AggregateStreamsUseCase(dfindexerClient, debridResolver, moviesRepository, betorClient, tmdbClient);
   }
 
   async execute(movieId: string, lang: 'pt' | 'en' = 'pt', sourceFilter?: ScraperType): Promise<{ best: StreamEntity; ranked: StreamEntity[] }> {

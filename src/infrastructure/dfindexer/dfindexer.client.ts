@@ -2,6 +2,14 @@ import type { DfindexerCandidate, DfindexerResult, ScraperType } from './dfindex
 
 const SCRAPERS: ScraperType[] = ['starck', 'rede', 'tfilme', 'comand', 'bludv'];
 
+// Season-pack query format is site-specific — verified empirically per scraper.
+// rede only matches bare "SNN"; the rest match "Temporada N".
+function seasonQueryFor(scraperType: ScraperType, title: string, season: number): string {
+  const pad = String(season).padStart(2, '0');
+  if (scraperType === 'rede') return `${title} S${pad}`;
+  return `${title} Temporada ${season}`;
+}
+
 // Sites behind Cloudflare per dfindexer's own README — need FlareSolverr to pass the challenge.
 const NEEDS_FLARESOLVERR: Set<ScraperType> = new Set(['comand', 'bludv']);
 
@@ -34,6 +42,21 @@ export class DfindexerClient {
   async searchAll(query: string): Promise<DfindexerCandidate[]> {
     const settled = await Promise.allSettled(
       SCRAPERS.map((scraperType) => this.search(scraperType, query)),
+    );
+
+    const candidates: DfindexerCandidate[] = [];
+    settled.forEach((result, index) => {
+      if (result.status !== 'fulfilled') return;
+      const scraperSource = SCRAPERS[index];
+      result.value.forEach((r) => candidates.push({ ...r, scraperSource }));
+    });
+
+    return candidates;
+  }
+
+  async searchAllSeason(title: string, season: number): Promise<DfindexerCandidate[]> {
+    const settled = await Promise.allSettled(
+      SCRAPERS.map((scraperType) => this.search(scraperType, seasonQueryFor(scraperType, title, season))),
     );
 
     const candidates: DfindexerCandidate[] = [];

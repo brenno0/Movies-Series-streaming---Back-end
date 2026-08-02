@@ -6,26 +6,37 @@ import { deleteStreamCache } from '@/infrastructure/cache/stream-cache';
 import { makeGetBestSeriesStream } from '@/core/use-cases/factories/ranking.factories';
 import type { ScraperType } from '@/infrastructure/dfindexer/dfindexer.types';
 import { ResourceNotFoundError, StreamNotFoundError } from '@/shared/errors';
+import { probeCodecs, planRemux, startFfmpegPipeline, tryAcquireFfmpegSlot, releaseFfmpegSlot, type RemuxPlan } from '@/infrastructure/ffmpeg/ffmpeg-stream';
 
 const DMCA_SIZE = 2_119_075;
 const MIN_VIDEO_SIZE = 10_000_000;
 
 const TTL_MS = 4 * 60 * 60 * 1000;
-const streamUrlCache = new Map<string, { url: string; contentType: string; expiresAt: number; source?: string }>();
+interface SeriesCacheEntry { url: string; contentType: string; expiresAt: number; source?: string; remuxPlan: RemuxPlan | null; durationSeconds: number | null }
+const streamUrlCache = new Map<string, SeriesCacheEntry>();
 
 function cacheKey(seriesId: string, season: number, episode: number, lang: 'pt' | 'en', source?: ScraperType): string {
   return `${seriesId}:${season}:${episode}:${lang}:${source ?? 'any'}`;
 }
 
-function getCached(key: string): { url: string; contentType: string; source?: string } | null {
+function getCached(key: string): SeriesCacheEntry | null {
   const entry = streamUrlCache.get(key);
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) { streamUrlCache.delete(key); return null; }
-  return { url: entry.url, contentType: entry.contentType, source: entry.source };
+  return entry;
 }
 
-function setCached(key: string, url: string, contentType: string, source?: string): void {
-  streamUrlCache.set(key, { url, contentType, expiresAt: Date.now() + TTL_MS, source });
+function setCached(key: string, url: string, contentType: string, remuxPlan: RemuxPlan | null, durationSeconds: number | null, source?: string): void {
+  streamUrlCache.set(key, { url, contentType, expiresAt: Date.now() + TTL_MS, remuxPlan, durationSeconds, source });
+}
+
+// mp4 container + h264 video + aac audio is natively playable — no ffmpeg needed.
+async function resolveRemuxPlan(url: string, contentType: string): Promise<{ remuxPlan: RemuxPlan | null; durationSeconds: number | null }> {
+  const codecs = await probeCodecs(url);
+  if (!codecs) return { remuxPlan: contentType === 'video/mp4' ? null : { copyVideo: false, copyAudio: false }, durationSeconds: null };
+  const plan = planRemux(codecs);
+  const remuxPlan = (contentType === 'video/mp4' && plan.copyVideo && plan.copyAudio) ? null : plan;
+  return { remuxPlan, durationSeconds: codecs.durationSeconds };
 }
 
 function detectContentType(bytes: Uint8Array, fallback: string): string {
@@ -115,7 +126,7 @@ export const seriesStreamPrefetch = async (request: FastifyRequest, reply: Fasti
 
   try {
     const existing = getCached(key);
-    if (existing) return reply.send({ ready: true, source: existing.source });
+    if (existing) return reply.send({ ready: true, source: existing.source, durationSeconds: existing.durationSeconds });
 
     const { ranked } = await makeGetBestSeriesStream().execute(seriesId, season, episode, lang, query.source);
     const result = await findBestStream(ranked);
@@ -124,8 +135,9 @@ export const seriesStreamPrefetch = async (request: FastifyRequest, reply: Fasti
       return reply.status(503).send({ ready: false });
     }
 
-    setCached(key, result.finalUrl, result.contentType, result.stream.scraperSource);
-    return reply.send({ ready: true, source: result.stream.scraperSource });
+    const { remuxPlan, durationSeconds } = await resolveRemuxPlan(result.finalUrl, result.contentType);
+    setCached(key, result.finalUrl, result.contentType, remuxPlan, durationSeconds, result.stream.scraperSource);
+    return reply.send({ ready: true, source: result.stream.scraperSource, durationSeconds });
   } catch (err) {
     if (err instanceof StreamNotFoundError || err instanceof ResourceNotFoundError) {
       return reply.status(404).send({ ready: false });
@@ -136,7 +148,7 @@ export const seriesStreamPrefetch = async (request: FastifyRequest, reply: Fasti
 
 export const seriesStreamProxy = async (request: FastifyRequest, reply: FastifyReply) => {
   const { seriesId } = request.params as { seriesId: string };
-  const query = request.query as { season?: string; episode?: string; lang?: 'pt' | 'en'; source?: ScraperType };
+  const query = request.query as { season?: string; episode?: string; lang?: 'pt' | 'en'; source?: ScraperType; seekTo?: string };
   const season = Number(query.season ?? 1);
   const episode = Number(query.episode ?? 1);
   const lang = query.lang ?? 'pt';
@@ -153,12 +165,36 @@ export const seriesStreamProxy = async (request: FastifyRequest, reply: FastifyR
       const result = await findBestStream(ranked);
       if (result) {
         console.log(`[series-stream] series=${seriesId} s=${season} e=${episode} url=${result.finalUrl.slice(0, 80)}`);
-        setCached(key, result.finalUrl, result.contentType, result.stream.scraperSource);
-        cached = { url: result.finalUrl, contentType: result.contentType, source: result.stream.scraperSource };
+        const { remuxPlan, durationSeconds } = await resolveRemuxPlan(result.finalUrl, result.contentType);
+        setCached(key, result.finalUrl, result.contentType, remuxPlan, durationSeconds, result.stream.scraperSource);
+        cached = getCached(key)!;
       } else {
         await makeGetBestSeriesStream().invalidate(seriesId, season, episode);
         return reply.status(503).send({ error: 'No working stream found for this episode.' });
       }
+    }
+
+    if (cached.remuxPlan) {
+      if (!tryAcquireFfmpegSlot()) {
+        return reply.status(503).send({ error: 'Server busy transcoding another stream, try again shortly.' });
+      }
+      console.log(`[series-ffmpeg] series=${seriesId} s=${season} e=${episode} copyVideo=${cached.remuxPlan.copyVideo} copyAudio=${cached.remuxPlan.copyAudio} seekTo=${query.seekTo ?? 0}`);
+
+      const seekSeconds = Number(query.seekTo ?? 0) || 0;
+      const session = startFfmpegPipeline(cached.url, cached.remuxPlan, seekSeconds);
+
+      let released = false;
+      const release = () => { if (!released) { released = true; releaseFfmpegSlot(); } };
+      session.stream.once('close', release);
+      session.stream.once('error', release);
+      request.socket.once('close', () => { session.kill(); release(); });
+
+      reply.code(200).type('video/mp4');
+      reply.header('Accept-Ranges', 'none');
+      reply.header('X-Stream-Source', cached.source ?? 'unknown');
+      reply.header('X-Stream-Mode', cached.remuxPlan.copyVideo && cached.remuxPlan.copyAudio ? 'remux' : 'transcode');
+      if (cached.durationSeconds) reply.header('X-Stream-Duration', String(cached.durationSeconds));
+      return reply.send(session.stream);
     }
 
     let upstream = await openStream(cached.url, rangeHeader);
@@ -168,8 +204,9 @@ export const seriesStreamProxy = async (request: FastifyRequest, reply: FastifyR
       const { ranked } = await makeGetBestSeriesStream().execute(seriesId, season, episode, lang, query.source);
       const result = await findBestStream(ranked);
       if (!result) return reply.status(503).send({ error: 'No working stream found for this episode.' });
-      setCached(key, result.finalUrl, result.contentType, result.stream.scraperSource);
-      cached = { url: result.finalUrl, contentType: result.contentType, source: result.stream.scraperSource };
+      const { remuxPlan, durationSeconds } = await resolveRemuxPlan(result.finalUrl, result.contentType);
+      setCached(key, result.finalUrl, result.contentType, remuxPlan, durationSeconds, result.stream.scraperSource);
+      cached = getCached(key)!;
       upstream = await openStream(cached.url, rangeHeader);
     }
 
