@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [3.4.0](https://github.com/brenno0/Movies-Series-streaming---Back-end/compare/v3.3.1...v3.4.0) (2026-08-02)
+
+
+### Features
+
+* add dfindexer query builder and release-metadata parsing ([500721c](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/500721c2984d8788f4cad3a6c2faf77c50a64b9c))
+* add DFINDEXER_URL env var ([ba8001d](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/ba8001ddc87ce0bc4b90afeb299f18e5a57dbe40))
+* add DfindexerClient for parallel multi-scraper torrent search ([418c2a4](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/418c2a4ac944b6a0e71f8b054afd03bca621111d))
+* add RealDebridClient to resolve magnets into direct download links ([2c8a5e2](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/2c8a5e2f174c95ae764f366959e1d63dfc4b7f09))
+* add TorBox as primary debrid provider, Real-Debrid as fallback ([fefcb30](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/fefcb30c725f3d42a10e194f6e2b0137e02d580f))
+* allow filtering resolved streams by scraper source ([d9d3e20](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/d9d3e20f207d62ad1a19555602e3264c0da42c11))
+* expose ?source= query param and active scraper source on stream endpoints ([a39cc07](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/a39cc079509f1fbd450dfaff4927300f4d074e99))
+* rewire streaming pipeline through dfindexer + Real-Debrid ([bb8c6f2](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/bb8c6f2c28966297c98dea80679a6d70aba29168))
+* rework StreamEntity and scoring for dfindexer candidates ([ecf2516](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/ecf2516214cc8dcedb2b11dce7b6f3c37f38fed9))
+
+
+### Bug Fixes
+
+* harden Real-Debrid resolution and disambiguate dfindexer matches by IMDB id ([c0e7c83](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/c0e7c83cb0e7660751d602e88a660ea3f4dd1eea))
+* keep non-IMDB-matched candidates as fallback, widen resolve pool to 20 ([c4c4499](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/c4c44999aa3c6f5d2b4d6c1cd7f3f88a3a067b9e))
+* verify TorBox endpoints live, shorten poll budget for cold magnets ([8e341ce](https://github.com/brenno0/Movies-Series-streaming---Back-end/commit/8e341ce7b00aeb17c42175b5dd6bdea117c785ab))
+
 ### [3.3.1](https://github.com/brenno0/Movies-Series-streaming---Back-end/compare/v3.3.0...v3.3.1) (2026-05-17)
 
 ## [3.3.0](https://github.com/brenno0/Movies-Series-streaming---Back-end/compare/v3.2.0...v3.3.0) (2026-05-16)
